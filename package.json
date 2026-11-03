@@ -1,0 +1,22 @@
+{
+  "name": "openstate",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.8.2",
+    "@opentui/keymap": "^0.8.2",
+    "@opentui/react": "^0.8.2",
+    "diff": "^9.0.0",
+    "react": "^19.3.1"
+  },
+  "scripts": {
+    "dev": "bun --watch src/main.tsx",
+    "start": "bun src/main.tsx",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,52 @@
+import { createCliRenderer } from "@opentui/core"
+import { registerEscapeClearsPendingSequence, registerExCommands, registerLeader } from "@opentui/keymap/addons"
+import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
+import { KeymapProvider } from "@opentui/keymap/react"
+import { createRoot } from "@opentui/react"
+import { AppState, commands } from "./state"
+import { App, AppContext } from "./ui/App"
+
+const renderer = await createCliRenderer({ exitOnCtrlC: true, targetFps: 60 })
+const keymap = createDefaultOpenTuiKeymap(renderer)
+registerExCommands(keymap)
+registerEscapeClearsPendingSequence(keymap)
+// `g` prefixes vim-style sequences (gt, gT, gg); plain "gt" would parse as the ">" key.
+registerLeader(keymap, { trigger: "g", name: "g" })
+
+// OPENSTATE_DEBUG=<file> logs keymap diagnostics and key dispatch results.
+const debugFile = process.env.OPENSTATE_DEBUG
+if (debugFile) {
+  const { appendFileSync } = await import("node:fs")
+  const log = (x: unknown) => appendFileSync(debugFile, JSON.stringify(x) + "\n")
+  keymap.on("warning", (w) => log({ warning: w }))
+  keymap.on("error", (e) => log({ error: String((e as { message?: string }).message ?? e) }))
+  keymap.intercept("key:after", (ctx) => log({ key: ctx.event.name, reason: ctx.reason, handled: ctx.handled }))
+}
+
+const state = new AppState()
+state.onQuit = () => {
+  renderer.destroy()
+  process.exit(0)
+}
+
+// Every palette command is also an ex command, so `:theme nord` resolves through the keymap.
+keymap.registerLayer({
+  commands: commands.map((c) => ({
+    name: c.name,
+    namespace: "excommands",
+    nargs: "*",
+    desc: c.desc,
+    run({ payload }: { payload: { args: readonly string[] } }) {
+      c.run(state, payload.args.join(" "))
+      state.emit()
+    },
+  })),
+})
+
+createRoot(renderer).render(
+  <KeymapProvider keymap={keymap}>
+    <AppContext.Provider value={state}>
+      <App />
+    </AppContext.Provider>
+  </KeymapProvider>,
+)
