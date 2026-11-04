@@ -111,7 +111,8 @@ export class AppState {
   // Border being dragged with the mouse: the panel on its left.
   dragging: "sources" | "actions" | null = null
   // Action being dragged to a new place in the list.
-  moving: { id: number } | null = null
+  // The action being dragged with the mouse: the list as it was, and whether it had been moved before.
+  moving: { id: number; before: Action[]; wasMoved: boolean } | null = null
   screenW = 120
   // Vim-style y/N question in the command line.
   confirm: { text: string; run: () => void } | null = null
@@ -493,18 +494,72 @@ export class AppState {
       this.notify(`${done} action${done === 1 ? "" : "s"} back in place`)
     })
   }
-  // Mouse drag: step the dragged action until it sits where the pointed-at action is,
-  // stopping at the first move that is refused.
-  dragTo(targetId: number) {
+  // Mouse drag. The row moves here only, at once; the app gets a single reorder on release, since it
+  // recomputes and sends back its whole history for each one.
+  startDrag(id: number) {
+    const a = this.timeline().find((x) => x.id === id)
+    const st = a && this.store(a.storeKey)
+    if (!a || !st) return
+    this.selectAction(id)
+    // Up to the commit the history is fixed, as with J/K.
+    const base = this.committedIndex(st)
+    if (st.actions.indexOf(a) <= Math.max(0, base))
+      return this.notify(base > 0 ? "E: committed actions cannot move" : "E: the initial action cannot move", true)
+    const moved = this.movedIds(st.key)
+    this.moving = { id, before: [...st.actions], wasMoved: moved.has(id) }
+    // So the ghost marks where it came from while it moves.
+    moved.add(id)
+  }
+  private dragged() {
     const m = this.moving
-    const a = this.selected()
-    if (!m || !a || a.id !== m.id || targetId === a.id) return
-    const shown = this.timeline().filter((x) => x.storeKey === a.storeKey)
-    const target = shown.find((x) => x.id === targetId)
-    if (!target) return
-    let n = shown.indexOf(target) - shown.indexOf(a)
-    const dir = n > 0 ? 1 : -1
-    while (n !== 0 && this.moveAction(dir)) n -= dir
+    const a = m && this.timeline().find((x) => x.id === m.id)
+    const st = a && this.store(a.storeKey)
+    return m && a && st ? { m, a, st } : null
+  }
+  // Put the dragged action where the pointed-at action is, or back home over its ghost (target undefined).
+  dragTo(targetId?: number) {
+    const d = this.dragged()
+    if (!d) return
+    const { a, st } = d
+    const acts = st.actions
+    let to: number
+    if (targetId === undefined) {
+      const h = this.home(a)
+      if (!h) return
+      to = h.before ? acts.indexOf(h.before) : acts.length
+      if (to > acts.indexOf(a)) to--
+    } else {
+      const target = acts.find((x) => x.id === targetId)
+      if (!target || target === a) return
+      to = acts.indexOf(target)
+    }
+    // Neither @@INIT nor anything up to the commit can change place: stop just below them.
+    to = Math.max(to, Math.max(0, this.committedIndex(st)) + 1)
+    const from = acts.indexOf(a)
+    if (to === from) return
+    acts.splice(from, 1)
+    acts.splice(to, 0, a)
+    // The last action is selected as "follow the end"; once moved up, keep it selected by id.
+    this.selectAction(a.id)
+  }
+  // Mouse up: tell the app where the action ended up, or put the list back if it cannot reorder.
+  endDrag() {
+    const d = this.dragged()
+    this.moving = null
+    if (!d) return
+    const { m, a, st } = d
+    const moved = this.movedIds(st.key)
+    const at = st.actions.indexOf(a)
+    if (at === m.before.indexOf(a)) {
+      if (!m.wasMoved) moved.delete(a.id)
+      return
+    }
+    if (!this.via(st, (c) => c.reorder(a.id, st.actions[at + 1]?.id ?? null))) {
+      st.actions = m.before
+      if (!m.wasMoved) moved.delete(a.id)
+      return
+    }
+    if (!this.home(a)) moved.delete(a.id)
   }
   toggleLock() {
     const st = this.target()

@@ -238,20 +238,19 @@ export function Actions({ width }: { width: number }) {
                 parts={spread(left, right, inner)}
                 bg={bg}
                 onMouseDown={() => {
-                  s.selectAction(a.id)
-                  s.moving = { id: a.id }
+                  s.startDrag(a.id)
                   s.emit()
                 }}
                 onMouseDrag={(e) => {
                   // The row under the pointer, so ghost and commit lines in between do not count.
                   const row = ref.current?.getChildren().find((c) => c.screenY === e.y && /^(act-|ghost)/.test(c.id))
                   // Over its own ghost: back to the original place.
-                  if (row?.id === "ghost") s.restoreAction()
+                  if (row?.id === "ghost") s.dragTo()
                   else if (row) s.dragTo(Number(row.id.slice(4)))
                   s.emit()
                 }}
                 onMouseUp={() => {
-                  s.moving = null
+                  s.endDrag()
                   s.emit()
                 }}
               />
