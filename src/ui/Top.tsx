@@ -1,7 +1,7 @@
 import type { MouseEvent } from "@opentui/core"
 import { changeCount, clock, type Action } from "../model"
 import type { AppState } from "../state"
-import { BOLD, fit, Line, spread, useApp, type Part } from "./kit"
+import { BOLD, fit, Line, useApp, type Part } from "./kit"
 
 const SEP = " › "
 
@@ -34,14 +34,6 @@ export function Header({ width }: { width: number }) {
   })
 
   const left: Part[] = crumbs.flatMap((c, i) => (i ? [[SEP, t.dim] as Part, c.part] : [c.part]))
-  const live = s.view().cursor === null
-  const right: Part[] = [
-    live ? ["◉ live", t.add] : ["◷ time travel", t.warn],
-    ["  ", t.dim],
-    s.paused ? ["❚❚ paused", t.warn] : ["● rec", t.remove],
-    ["  mock data ", t.muted],
-  ]
-
   const onDown = (e: MouseEvent) => {
     let x = 0
     for (let i = 0; i < crumbs.length; i++) {
@@ -50,7 +42,7 @@ export function Header({ width }: { width: number }) {
       x += w
     }
   }
-  return <Line parts={spread(left, right, width)} bg={t.bg} onMouseDown={onDown} />
+  return <Line parts={fit(left, width)} bg={t.bg} onMouseDown={onDown} />
 }
 
 const BARS = "▁▂▃▄▅▆▇█"

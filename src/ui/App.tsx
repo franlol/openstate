@@ -1,6 +1,6 @@
 import { useTerminalDimensions } from "@opentui/react"
 import { useEffect } from "react"
-import { StatusBar, Suggestions } from "./Bottom"
+import { CmdLine, StatusLine, Suggestions, WhichKey } from "./Bottom"
 import { Inspector } from "./Inspector"
 import { useApp } from "./kit"
 import { useGlobalKeys } from "./keys"
@@ -24,6 +24,10 @@ export function App() {
   }, [splash])
 
   if (splash) return <Splash />
+  if (!s.greeted) {
+    s.greeted = true
+    s.notify("openstate · ? keys · : commands · q quit")
+  }
 
   s.screenW = width
   const w = s.widths()
@@ -36,8 +40,10 @@ export function App() {
         <Actions width={w.actions} />
         <Inspector width={w.inspector} />
       </box>
-      <StatusBar width={width} />
+      <StatusLine width={width} />
+      <CmdLine width={width} />
       <Suggestions width={width} />
+      <WhichKey />
       <ThemePicker />
       <Help width={width} height={height} />
     </box>

@@ -1,56 +1,90 @@
+import type { MouseEvent } from "@opentui/core"
 import { stringifyKeySequence } from "@opentui/keymap"
 import { useActiveKeys, usePendingSequence } from "@opentui/keymap/react"
+import type { AppState } from "../state"
+import { mix } from "../theme"
 import { BOLD, fit, Line, spread, useApp, type Part } from "./kit"
+import { keyLabel } from "./keys"
 
-const HINT_ORDER = ["j", "return", "l", "h", "[", "]", "s", "/", ":", "t", "m", "?"]
+type Seg = { text: string; fg: string; bg: string; bold?: boolean; click?: () => void }
 
-export function StatusBar({ width }: { width: number }) {
+function modeOf(s: AppState): { name: string; color: string } {
+  const t = s.theme
+  if (s.help) return { name: "HELP", color: t.sources[1]! }
+  if (s.picker) return { name: "THEME", color: t.sources[1]! }
+  if (s.mode === "command") return { name: "COMMAND", color: t.warn }
+  if (s.mode === "filter") return { name: "FILTER", color: t.add }
+  return { name: "NORMAL", color: t.accent }
+}
+
+// Vim's ruler: Top, Bot, All or how far through the history the cursor is.
+function ruler(s: AppState): string {
+  const n = s.timeline().length
+  const i = s.selectedIndex()
+  if (n <= 1) return "All"
+  if (s.view().cursor === null) return "Bot"
+  if (i <= 0) return "Top"
+  return `${Math.round((i / (n - 1)) * 100)}%`
+}
+
+// Lualine-style statusline: mode, app state and position, as clickable coloured segments.
+export function StatusLine({ width }: { width: number }) {
   const s = useApp()
   const t = s.theme
-  const active = useActiveKeys({ includeMetadata: true })
-  const pending = usePendingSequence()
+  const mode = modeOf(s)
+  const b = mix(t.bg, t.fg, 0.12)
+  const c = mix(t.bg, t.fg, 0.05)
+  const sel = s.selected()
+  const live = s.view().cursor === null
+  const tl = s.timeline()
+  const emit = (fn: () => void) => () => (fn(), s.emit())
 
+  const left: Seg[] = [
+    { text: ` ${mode.name} `, fg: t.bg, bg: mode.color, bold: true },
+    live
+      ? { text: " ◉ LIVE ", fg: t.add, bg: b, bold: true }
+      : { text: " ◷ TRAVEL ", fg: t.warn, bg: b, bold: true, click: emit(() => s.goLive()) },
+    s.paused
+      ? { text: " ❚❚ paused ", fg: t.warn, bg: c, click: emit(() => s.togglePause()) }
+      : { text: " ● rec ", fg: t.remove, bg: c, click: emit(() => s.togglePause()) },
+  ]
+  if (s.merge) left.push({ text: " ⧉ all apps ", fg: t.fg, bg: c, click: emit(() => s.toggleMerge()) })
+  if (s.filter) left.push({ text: ` /${s.filter} `, fg: t.add, bg: c, click: emit(() => (s.filter = "")) })
+
+  const right: Seg[] = [
+    { text: " mock data ", fg: t.dim, bg: c },
+    { text: ` ${sel?.type ?? "—"} `, fg: t.muted, bg: b },
+    { text: ` ${tl.length ? s.selectedIndex() + 1 : 0}/${tl.length}  ${ruler(s)} `, fg: t.bg, bg: mode.color, bold: true },
+  ]
+
+  // Drop the least important segments until everything fits.
+  const len = (xs: Seg[]) => xs.reduce((n, x) => n + x.text.length, 0)
+  while (len(left) + len(right) > width && right.length > 1) right.shift()
+  while (len(left) + len(right) > width && left.length > 1) left.pop()
+
+  const fill: Seg = { text: " ".repeat(Math.max(0, width - len(left) - len(right))), fg: c, bg: c }
+  const segs = [...left, fill, ...right]
+  const onDown = (e: MouseEvent) => {
+    let x = 0
+    for (const seg of segs) {
+      if (e.x < x + seg.text.length) return seg.click?.()
+      x += seg.text.length
+    }
+  }
+  return <Line parts={segs.map((x): Part => [x.text, x.fg, x.bold ? BOLD : undefined, x.bg])} bg={c} onMouseDown={onDown} />
+}
+
+// Vim's command line: messages, the `:` and `/` prompts, and pending keys (showcmd) on the right.
+export function CmdLine({ width }: { width: number }) {
+  const s = useApp()
+  const t = s.theme
+  const pending = usePendingSequence()
   if (s.mode !== "normal") return <Prompt width={width} />
 
-  const label = s.help ? " HELP " : s.picker ? " THEME " : " NORMAL "
-  let right: Part[]
-  if (pending.length) {
-    // Show the sequence in progress and what can complete it.
-    const next = active.map((k) => `${k.display} ${String(k.bindingAttrs?.desc ?? "")}`).join("  ")
-    right = [[` ${stringifyKeySequence(pending, { preferDisplay: true })}… `, t.warn, BOLD], [next + " ", t.muted]]
-  } else if (s.message && s.message.until > Date.now()) {
-    right = [[` ${s.message.text} `, t.fg]]
-  } else {
-    // Hints come from the keymap, so they follow the focused panel automatically.
-    const hints = active
-      .filter((k) => k.bindingAttrs?.desc && HINT_ORDER.includes(k.display))
-      .sort((a, b) => HINT_ORDER.indexOf(a.display) - HINT_ORDER.indexOf(b.display))
-    right = hints.flatMap((k): Part[] => [
-      [` ${k.display}`, t.fg, BOLD],
-      [` ${String(k.bindingAttrs!.desc)} `, t.muted],
-    ])
-  }
-  const parts = spread([[" ", t.bg]], right, width - label.length)
-  return (
-    <box height={1} flexShrink={0} flexDirection="row" backgroundColor={t.bg}>
-      <box backgroundColor={t.accent} flexShrink={0}>
-        <text>
-          <span fg={t.bg} attributes={BOLD}>
-            {label}
-          </span>
-        </text>
-      </box>
-      <box flexGrow={1}>
-        <text>
-          {parts.map(([txt, fg, a], i) => (
-            <span key={i} fg={fg} attributes={a}>
-              {txt}
-            </span>
-          ))}
-        </text>
-      </box>
-    </box>
-  )
+  const msg = s.message && s.message.until > Date.now() ? s.message : null
+  const left: Part[] = msg ? [[msg.text, msg.error ? t.remove : t.fg, msg.error ? BOLD : undefined]] : []
+  const showcmd: Part[] = pending.length ? [[`${keyLabel(stringifyKeySequence(pending, { preferDisplay: true }))} `, t.fg, BOLD]] : []
+  return <Line parts={spread(left, showcmd, width)} bg={t.bg} />
 }
 
 function Prompt({ width }: { width: number }) {
@@ -60,26 +94,19 @@ function Prompt({ width }: { width: number }) {
   const matches = isCmd ? s.commandMatches(s.input) : []
   const pick = matches.length ? matches[s.cmdIndex % matches.length] : undefined
   return (
-    <box height={1} flexShrink={0} flexDirection="row" backgroundColor={t.selBg}>
-      <box backgroundColor={isCmd ? t.warn : t.add} flexShrink={0}>
-        <text>
-          <span fg={t.bg} attributes={BOLD}>
-            {isCmd ? " COMMAND " : " FILTER "}
-          </span>
-        </text>
-      </box>
+    <box height={1} flexShrink={0} flexDirection="row" backgroundColor={t.bg}>
       <text>
-        <span fg={t.accent} attributes={BOLD}>
-          {isCmd ? " :" : " /"}
+        <span fg={t.fg} attributes={BOLD}>
+          {isCmd ? ":" : "/"}
         </span>
       </text>
       <input
         focused
         flexGrow={1}
         value={s.input}
-        placeholder={isCmd ? "theme, merge, pause, skip, live, clear, help, quit" : "filter actions by type"}
-        backgroundColor={t.selBg}
-        focusedBackgroundColor={t.selBg}
+        placeholder={isCmd ? "" : "filter actions by type"}
+        backgroundColor={t.bg}
+        focusedBackgroundColor={t.bg}
         textColor={t.fg}
         cursorColor={t.accent}
         placeholderColor={t.dim}
@@ -95,7 +122,7 @@ function Prompt({ width }: { width: number }) {
           if (isCmd) {
             // Complete to the highlighted suggestion when the typed name is partial.
             const [name = "", ...args] = v.trim().split(/\s+/)
-            const full = pick && pick.name !== name ? [pick.name, ...args].join(" ") : v
+            const full = name && pick && pick.name !== name ? [pick.name, ...args].join(" ") : v
             if (full.trim()) s.runCommand(full)
           }
           s.emit()
@@ -103,13 +130,14 @@ function Prompt({ width }: { width: number }) {
       />
       {pick && (
         <text>
-          <span fg={t.muted}>{fit([[`${pick.name} — ${pick.desc} `, t.muted]], Math.min(48, width / 2))[0]![0]}</span>
+          <span fg={t.dim}>{fit([[`${pick.desc} `, t.dim]], Math.min(48, Math.floor(width / 2)))[0]![0]}</span>
         </text>
       )}
     </box>
   )
 }
 
+// Wildmenu-style completion list above the command line.
 export function Suggestions({ width }: { width: number }) {
   const s = useApp()
   const t = s.theme
@@ -121,7 +149,7 @@ export function Suggestions({ width }: { width: number }) {
   return (
     <box
       position="absolute"
-      bottom={1}
+      bottom={2}
       left={0}
       width={w}
       border
@@ -149,6 +177,42 @@ export function Suggestions({ width }: { width: number }) {
             s.emit()
           }}
         />
+      ))}
+    </box>
+  )
+}
+
+// which-key: while a key sequence is pending, list what can complete it.
+export function WhichKey() {
+  const s = useApp()
+  const t = s.theme
+  const pending = usePendingSequence()
+  const active = useActiveKeys({ includeMetadata: true })
+  if (!pending.length || s.mode !== "normal") return null
+  const rows = active
+    .filter((k) => k.bindingAttrs?.desc)
+    .map((k) => ({ key: keyLabel(k.display), desc: String(k.bindingAttrs!.desc) }))
+  if (!rows.length) return null
+  const keyW = Math.max(...rows.map((r) => r.key.length))
+  const w = Math.max(...rows.map((r) => keyW + r.desc.length + 2)) + 4
+  return (
+    <box
+      position="absolute"
+      bottom={2}
+      right={1}
+      width={w}
+      border
+      borderStyle="rounded"
+      borderColor={t.borderActive}
+      title={` ${keyLabel(stringifyKeySequence(pending, { preferDisplay: true }))} `}
+      titleColor={t.accent}
+      backgroundColor={t.panel}
+      paddingLeft={1}
+      flexDirection="column"
+      zIndex={25}
+    >
+      {rows.map((r) => (
+        <Line key={r.key} parts={fit([[r.key.padEnd(keyW + 2), t.accent, BOLD], [r.desc, t.muted]], w - 3)} bg={t.panel} />
       ))}
     </box>
   )

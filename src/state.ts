@@ -54,12 +54,15 @@ export class AppState {
   srcCursor = 1
   cmdIndex = 0
   pending: string | null = null
-  message: { text: string; until: number } | null = null
+  // Command-line message, vim style; errors stay longer.
+  message: { text: string; error: boolean; until: number } | null = null
   unseen = new Map<string, number>()
   // Flash timestamps for changed tree paths and freshly arrived action ids.
   flashPaths = new Map<string, number>()
   flashActions = new Map<number, number>()
   splashUntil = Date.now() + 1800
+  // Vim-style startup message once the splash is gone.
+  greeted = false
   // Panel widths in cells; a null actions width means the default split.
   layout: { sources: number; actions: number | null } = { sources: 24, actions: null }
   // Border being dragged with the mouse: the panel on its left.
@@ -194,9 +197,10 @@ export class AppState {
   }
 
   // --- actions ------------------------------------------------------------
-  notify(text: string) {
-    this.message = { text, until: Date.now() + 2500 }
-    setTimeout(() => this.emit(), 2600)
+  notify(text: string, error = false) {
+    const ms = error ? 5000 : 2500
+    this.message = { text, error, until: Date.now() + ms }
+    setTimeout(() => this.emit(), ms + 100)
   }
 
   setTheme(id: string) {
@@ -247,7 +251,7 @@ export class AppState {
   }
   removeSource(id: string) {
     const src = this.sources.find((s) => s.id === id)
-    if (!src || src.connected) return this.notify("only disconnected apps can be removed")
+    if (!src || src.connected) return this.notify("E: only disconnected apps can be removed", true)
     this.sources = this.sources.filter((s) => s !== src)
     if (src.stores.some((s) => s.key === this.activeKey)) this.activate(this.sources[0]!.stores[0]!.key)
     this.srcCursor = Math.min(this.srcCursor, this.sourceRows().length - 1)
@@ -351,7 +355,7 @@ export class AppState {
   runCommand(line: string) {
     const [name = "", ...rest] = line.trim().split(/\s+/)
     const cmd = commands.find((c) => c.name === name) ?? this.commandMatches(name)[0]
-    if (!cmd) return this.notify(`unknown command: ${name}`)
+    if (!cmd) return this.notify(`E: not a command: ${name}`, true)
     cmd.run(this, rest.join(" "))
   }
   commandMatches(q: string): Command[] {
