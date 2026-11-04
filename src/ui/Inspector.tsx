@@ -1,6 +1,6 @@
 import type { LineColorConfig, LineNumberRenderable, ScrollBoxRenderable, TabSelectRenderable } from "@opentui/core"
 import { createTwoFilesPatch } from "diff"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState, type RefObject } from "react"
 import { jsonLines, preview, type TreeRow } from "../model"
 import { TABS } from "../state"
 import { mix } from "../theme"
@@ -74,16 +74,26 @@ function StateTree({ width }: { width: number }) {
   const changes = s.changes()
   const focused = s.focus === "inspector"
   const ref = useRef<ScrollBoxRenderable>(null)
+  const { from, to, height } = useVisibleRows(ref, rows.length)
+  // Keep the cursor in view; its row may not be mounted yet, so scroll by position. Before the first
+  // layout the viewport has no height yet.
   useEffect(() => {
-    ref.current?.scrollChildIntoView(`tree-${v.treeCursor}`)
-  }, [v.treeCursor])
+    const sb = ref.current
+    const h = sb?.viewport.height ?? 0
+    if (!sb || h <= 0) return
+    const c = v.treeCursor
+    if (c < sb.scrollTop) sb.scrollTo(c)
+    else if (c >= sb.scrollTop + h) sb.scrollTo(c - h + 1)
+  }, [v.treeCursor, height])
 
   const leafChange = new Map(changes.map((c) => [c.path, c]))
   const under = (p: string) => changes.filter((c) => c.path === p || c.path.startsWith(p + ".")).length
 
   return (
     <scrollbox ref={ref} flexGrow={1} scrollbarOptions={scrollbar(t)}>
-      {rows.map((r: TreeRow, i) => {
+      {from > 0 && <box height={from} />}
+      {rows.slice(from, to).map((r: TreeRow, j) => {
+        const i = from + j
         const cursor = focused && i === v.treeCursor
         const flash = s.flashLevel(s.flashPaths.get(r.path))
         const c = leafChange.get(r.path)
@@ -118,8 +128,34 @@ function StateTree({ width }: { width: number }) {
           />
         )
       })}
+      {to < rows.length && <box height={rows.length - to} />}
     </scrollbox>
   )
+}
+
+// Rows are one cell high, so only those around the viewport are mounted; spacers stand in for the rest.
+// Expanding a 5000-item array would otherwise build 5000 rows on every render.
+const OVERSCAN = 30
+function useVisibleRows(ref: RefObject<ScrollBoxRenderable | null>, total: number) {
+  const [view, setView] = useState({ top: 0, height: 40 })
+  useEffect(() => {
+    const sb = ref.current
+    if (!sb) return
+    const update = () => {
+      const top = Math.floor(sb.scrollTop)
+      const height = sb.viewport.height
+      setView((v) => (v.top === top && v.height === height ? v : { top, height }))
+    }
+    update()
+    sb.verticalScrollBar.on("change", update)
+    sb.viewport.on("resize", update)
+    return () => {
+      sb.verticalScrollBar.off("change", update)
+      sb.viewport.off("resize", update)
+    }
+  }, [])
+  const from = Math.max(0, Math.min(view.top - OVERSCAN, total - view.height - OVERSCAN))
+  return { from, to: Math.min(total, view.top + view.height + OVERSCAN), height: view.height }
 }
 
 function valueColor(v: unknown, t: { add: string; warn: string; muted: string; fg: string }) {
