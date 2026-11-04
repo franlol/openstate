@@ -10,14 +10,22 @@
         "@opentui/react": "^0.8.2",
         "@redux-devtools/instrument": "^3.0.0",
         "diff": "^9.0.0",
+        "jsan": "^3.1.14",
         "react": "^19.3.1",
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "@types/jsan": "^3.1.5",
         "@types/react": "^19.3.0",
         "redux": "^5.0.1",
         "typescript": "^7.0.2",
       },
+      "peerDependencies": {
+        "redux": "^4 || ^5",
+      },
+      "optionalPeers": [
+        "redux",
+      ],
     },
   },
   "packages": {
@@ -46,6 +54,8 @@
     "@redux-devtools/instrument": ["@redux-devtools/instrument@3.0.0", "", { "peerDependencies": { "redux": "^3.4.0 || ^4.0.0 || ^5.0.0" } }, "sha512-f2PT0ZiwbpdpSNLPzozx7S2yiNgBJPWly7yTxFctCRMEU8jdkrW9TQbCYNdP+Cfj/VELEd7+qzNhGPsX9erdrQ=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
+
+    "@types/jsan": ["@types/jsan@3.1.5", "", {}, "sha512-gPZqsdRGlS/lAIXP0kKnHoG3w6DaFskZHpt3PZlvY7g2Pme16Qu9weGdY1dSoziU6A73+Wj/wst5d2v+j4AO9A=="],
 
     "@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
 
@@ -104,6 +114,8 @@
     "emoji-regex": ["emoji-regex@10.6.0", "", {}, "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="],
 
     "get-east-asian-width": ["get-east-asian-width@1.7.0", "", {}, "sha512-XjH1AECxf0giL2V1aU8vKyRR2ppRUb5c0EvT7zuJTokQ74bNo52zOtghqdWIqrhUD79fo3x0WfKZdOqxF6LG1Q=="],
+
+    "jsan": ["jsan@3.1.14", "", {}, "sha512-wStfgOJqMv4QKktuH273f5fyi3D3vy2pHOiSDGPvpcS/q+wb/M7AK3vkCcaHbkZxDOlDU/lDJgccygKSG2OhtA=="],
 
     "marked": ["marked@17.0.1", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-boeBdiS0ghpWcSwoNm/jJBwdpFaMnZWRzjA6SkUMYb40SVaN1x7mmfGKp0jvexGcx+7y2La5zRZsYFZI6Qpypg=="],
 

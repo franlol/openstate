@@ -17,6 +17,24 @@ Press `?` for keybindings and `:` for commands (the list shows what each one doe
 
 ## Connect an app
 
+### Apps already set up for Redux DevTools remote
+
+openstate speaks the Redux DevTools remote protocol (SocketCluster, the one `remotedev-server` and
+`@redux-devtools/cli` use). An app using `@redux-devtools/remote` — the usual setup for Node and React Native — connects
+with no changes: start openstate on the port the app sends to (8000 by default, `:set port` otherwise).
+
+```ts
+// what such an app already has; nothing to add
+import { composeWithDevTools } from "@redux-devtools/remote"
+const store = createStore(reducer, composeWithDevTools({ name: "mobile app", realtime: true, port: 8000 })())
+```
+
+Everything in the Redux column below works. Two things stay in the app's hands: how many actions it keeps (`maxAge` in
+those options, 30 by default; `:set maxage` does not reach it), and how soon it reconnects after openstate restarts
+(the remote client waits up to 30 s).
+
+### Any other app
+
 Make `openstate/client` the **first import** of the app, before any store library:
 
 ```ts

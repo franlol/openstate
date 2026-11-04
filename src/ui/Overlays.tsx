@@ -55,15 +55,16 @@ export function Waiting() {
       ? [["✗ ", t.remove, BOLD], [`not listening: ${s.listenError}`, t.remove], [" · :set port=<another>", t.muted]]
       : [[SPIN[frame % SPIN.length]! + " ", t.accent], ["waiting for apps on ", t.muted], [url, t.fg, BOLD]],
     [],
-    [["Make this the first import of your app:", t.muted]],
-    code('import "openstate/client"'),
+    [["Apps using Redux DevTools remote ", t.muted], ["(React Native, Node)", t.dim]],
+    [["connect as they are: openstate speaks that protocol on this port.", t.muted]],
     [],
-    [["Redux Toolkit, redux with the devtools compose, zustand's devtools", t.muted]],
-    [["and jotai-devtools then report here without other changes.", t.muted]],
+    [["Anything else: make this the first import of the app.", t.muted]],
+    code('import "openstate/client"'),
+    [["Redux Toolkit, zustand's devtools and jotai-devtools then report here.", t.muted]],
     [],
     ...(s.settings.port === 8000
       ? []
-      : [[["Another port: ", t.muted], [`OPENSTATE_URL=${url}`, t.fg], [" in the app's environment.", t.muted]] as Part[], []]),
+      : [[["openstate/client on this port: ", t.muted], [`OPENSTATE_URL=${url}`, t.fg]] as Part[], []]),
     [["No app at hand? ", t.dim], ["openstate --demo", t.fg], [" runs sample apps.", t.dim]],
   ]
   return (

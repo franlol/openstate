@@ -1,11 +1,18 @@
-// The bridge to real apps: a WebSocket server that openstate/client connects to.
+// The bridge to real apps: a WebSocket server that openstate/client connects to, and that also speaks the
+// Redux DevTools remote protocol (SocketCluster), so apps set up for remote devtools connect unchanged.
 // Each connection is a source; each store it reports is a Store whose StoreConn talks back over the socket.
 import type { Server, ServerWebSocket } from "bun"
+import jsan from "jsan"
 import type { AppMessage, LiftedState, ServerMessage } from "../client/protocol"
 import { parseStack, splitAction } from "./history"
 import { newActionId, type Action, type History, type Source, type Store, type StoreConn } from "./model"
 
-type Conn = { source: Source | null }
+type Conn = {
+  source: Source | null
+  // Decided by the first frame: openstate/client says hello, a remote devtools client starts a SocketCluster handshake.
+  proto?: "openstate" | "remote"
+}
+type LiftedAction = { type: string; [k: string]: unknown }
 type Socket = ServerWebSocket<Conn>
 
 // Per-store bookkeeping that the UI does not need.
@@ -22,6 +29,12 @@ type Link = {
   // Lifted ids that arrived while openstate was paused: the app keeps them, the list does not show them.
   // (The extension's PAUSE_RECORDING would fold the whole history into a commit instead.)
   unrecorded: Set<number>
+  // How lifted actions and dispatches reach this store's app, per protocol.
+  out: { lifted(action: LiftedAction): void; dispatch(action: LiftedAction): void }
+  // Remote apps do not say which actions openstate dispatched; the next of each type sent is taken as ours.
+  expect: string[]
+  // A remote app's maxAge, learnt from its first isExcess: that flag stays on for good, even after a revert.
+  cap?: number
 }
 
 export type Bridge = {
@@ -41,10 +54,18 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
   let colors = 0
 
   const sendTo = (ws: Socket, m: ServerMessage) => ws.send(JSON.stringify(m))
-  const lifted = (st: Store, action: { type: string; [k: string]: unknown }) => {
-    const l = links.get(st)!
-    sendTo(l.ws, { t: "lifted", id: l.instanceId, action })
-  }
+  const lifted = (st: Store, action: LiftedAction) => links.get(st)!.out.lifted(action)
+  // openstate/client: the instance id says which store of the app.
+  const clientOut = (l: Link): Link["out"] => ({
+    lifted: (action) => sendTo(l.ws, { t: "lifted", id: l.instanceId, action }),
+    dispatch: (action) => sendTo(l.ws, { t: "dispatch", id: l.instanceId, action }),
+  })
+  // Remote devtools: one store per socket, messages published on the channel the app logged in to.
+  const remoteOut = (l: Link): Link["out"] => ({
+    lifted: (action) => publish(l.ws, { type: "DISPATCH", action }),
+    // The remote client evaluates a string action, so send it as source text.
+    dispatch: (action) => (l.expect.push(action.type), publish(l.ws, { type: "ACTION", action: JSON.stringify(action) })),
+  })
   const message = (st: Store, msg: unknown) => {
     const l = links.get(st)!
     sendTo(l.ws, { t: "message", id: l.instanceId, message: msg })
@@ -90,7 +111,7 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
   function liftedConn(st: Store): StoreConn {
     const l = () => links.get(st)!
     return {
-      dispatch: (a) => sendTo(l().ws, { t: "dispatch", id: l().instanceId, action: a.payload === undefined ? { type: a.type } : { type: a.type, payload: a.payload } }),
+      dispatch: (a) => l().out.dispatch(actionOf(a)),
       toggle: (id) => lifted(st, { type: "TOGGLE_ACTION", id: liftedIdOf(st, id) }),
       // The extension's COMMIT empties the history; openstate keeps it and only remembers the base.
       commit: (id) => ((st.commitId = id), opts.onChange()),
@@ -192,6 +213,11 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
   }
 
   function onHello(ws: Socket, app: string) {
+    ws.data.source = sourceFor(app)
+    sendTo(ws, { t: "config", maxAge: opts.maxAge() })
+  }
+
+  function sourceFor(app: string): Source {
     // The same app coming back (reload, restart) takes its old place in the list.
     let src = sources.find((s) => s.name === app && !s.connected)
     if (src) {
@@ -209,8 +235,7 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
       }
       sources.push(src)
     }
-    ws.data.source = src
-    sendTo(ws, { t: "config", maxAge: opts.maxAge() })
+    return src
   }
 
   function onInit(ws: Socket, src: Source, m: Extract<AppMessage, { t: "init" }>) {
@@ -226,7 +251,9 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
       made.conn = m.kind === "lifted" ? liftedConn(made) : connectConn(made)
       st = made
       src.stores.push(st)
-      links.set(st, { ws, instanceId: m.id, kind: m.kind, ids: new Map(), ignoreInit: false, seq: 0, unrecorded: new Set() })
+      const l: Link = { ws, instanceId: m.id, kind: m.kind, ids: new Map(), ignoreInit: false, seq: 0, unrecorded: new Set(), out: null!, expect: [] }
+      l.out = clientOut(l)
+      links.set(st, l)
     }
     const l = links.get(st)!
     if (m.kind === "lifted") fromLifted(st, l, m.lifted)
@@ -240,7 +267,10 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
   function onAction(src: Source, m: Extract<AppMessage, { t: "action" }>) {
     const st = src.stores.find((s) => s.key === `${src.id}/${m.id}`)
     const l = st && links.get(st)
-    if (!st || !l) return
+    if (st && l) record(st, l, m)
+  }
+
+  function record(st: Store, l: Link, m: Extract<AppMessage, { t: "action" }>) {
     const last = st.actions[st.actions.length - 1]
     if (l.kind === "lifted") {
       const ls = l.lifted
@@ -266,6 +296,89 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
     while (st.actions.length > opts.maxAge()) st.actions.shift()
   }
 
+  // --- Redux DevTools remote: SocketCluster framing ---------------------------------------------------------
+  // Frames are JSON: {event, data, cid} to call or send, {rid, data} to answer. The app logs in as "master",
+  // listens on channel "respond" and transmits "log" events with START, STATE, ACTION, STOP or ERROR.
+  const publish = (ws: Socket, data: unknown) => ws.send(JSON.stringify({ event: "#publish", data: { channel: "respond", data } }))
+  let socketIds = 0
+
+  function onRemoteFrame(ws: Socket, packet: { event?: string; data?: any; cid?: number }) {
+    const reply = (data?: unknown) => packet.cid !== undefined && ws.send(JSON.stringify({ rid: packet.cid, data }))
+    switch (packet.event) {
+      case "#handshake":
+        // No pings from here, so the client must not expect them often: a pingTimeout of days.
+        return reply({ id: `os${++socketIds}`, pingTimeout: 1e9, isAuthenticated: false })
+      case "login":
+        return reply("respond")
+      case "log":
+      case "log-noid":
+        return onRemoteLog(ws, packet.data)
+      default:
+        // #subscribe, #unsubscribe and anything else that waits for an answer.
+        return reply()
+    }
+  }
+
+  function onRemoteLog(ws: Socket, m: { type: string; name?: string; payload?: string; action?: string; nextActionId?: number; isExcess?: boolean }) {
+    if (m.type === "START") {
+      const src = sourceFor(m.name || "remote app")
+      ws.data.source = src
+      const key = `${src.id}/redux`
+      let st = src.stores.find((s) => s.key === key)
+      if (!st) {
+        const made: Store = { key, sourceId: src.id, lib: "remote", name: "redux", actions: [], commitId: null, locked: false, conn: null! }
+        made.conn = liftedConn(made)
+        st = made
+        src.stores.push(st)
+        const l: Link = { ws, instanceId: "redux", kind: "lifted", ids: new Map(), ignoreInit: false, seq: 0, unrecorded: new Set(), out: null!, expect: [] }
+        l.out = remoteOut(l)
+        links.set(st, l)
+      }
+      links.get(st)!.ws = ws
+      // The app sends its history once it knows someone is watching.
+      return publish(ws, { type: "START" })
+    }
+    const src = ws.data.source
+    const st = src?.stores[0]
+    const l = st && links.get(st)
+    if (!st || !l) return
+    if (m.type === "STATE" && m.payload) fromLifted(st, l, jsan.parse(m.payload) as LiftedState)
+    else if (m.type === "ACTION" && m.payload && m.action && m.nextActionId) {
+      const perform = jsan.parse(m.action) as { action: { type: string }; timestamp: number; stack?: string }
+      const ours = l.expect.indexOf(perform.action.type)
+      if (ours >= 0) l.expect.splice(ours, 1)
+      record(st, l, {
+        t: "action",
+        id: "redux",
+        action: perform.action,
+        state: jsan.parse(m.payload),
+        time: perform.timestamp,
+        stack: perform.stack,
+        liftedId: m.nextActionId - 1,
+        fromDevtools: ours >= 0,
+      })
+      // The app dropped its oldest action to stay within its maxAge; the first state moves up to it.
+      const staged = l.lifted?.stagedActionIds.length ?? 0
+      if (m.isExcess) l.cap ??= staged - 1
+      if (l.cap !== undefined && staged > l.cap) dropOldest(st, l)
+    }
+  }
+
+  function dropOldest(st: Store, l: Link) {
+    const ls = l.lifted
+    if (!ls || ls.stagedActionIds.length < 3) return
+    const [gone] = ls.stagedActionIds.splice(1, 1)
+    delete ls.actionsById[gone!]
+    ls.computedStates.shift()
+    ls.currentStateIndex = ls.stagedActionIds.length - 1
+    const i = st.actions.findIndex((a) => a.seq === gone)
+    const first = st.actions[0]
+    if (i > 0 && first) {
+      first.state = first.prev = st.actions[i]!.state
+      st.actions.splice(i, 1)
+    }
+  }
+
   return {
     sources,
     listen(port) {
@@ -281,11 +394,20 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
               sockets.add(ws)
             },
             message(ws, raw) {
+              const text = String(raw)
+              // SocketCluster pongs ("" or "#2"): nothing to do, we never ping.
+              if (text === "" || text === "#2") return
               let m: AppMessage
               try {
-                m = JSON.parse(String(raw))
+                m = JSON.parse(text)
               } catch {
                 return
+              }
+              ws.data.proto ??= "t" in m ? "openstate" : "remote"
+              if (ws.data.proto === "remote") {
+                // A client may batch several frames into one array.
+                for (const p of [m].flat() as object[]) onRemoteFrame(ws, p)
+                return opts.onChange()
               }
               if (m.t === "hello") onHello(ws, m.app)
               const src = ws.data.source
@@ -317,7 +439,8 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
       }
     },
     setMaxAge(n) {
-      for (const ws of sockets) sendTo(ws, { t: "config", maxAge: n })
+      // Remote apps set their own maxAge in their devtools options.
+      for (const ws of sockets) if (ws.data.proto === "openstate") sendTo(ws, { t: "config", maxAge: n })
     },
   }
 }

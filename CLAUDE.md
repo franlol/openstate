@@ -19,7 +19,8 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
 - `src/model.ts` — data types, structural diff, tree flattening, and `StoreConn`: the commands openstate sends to an
   app (dispatch, skip, commit, revert, sweep, lock). The app owns history and recomputes states, as in Redux DevTools
 - `src/history.ts` — `:export` / `:import` in Redux DevTools' file format (lifted state inside `payload`)
-- `src/bridge.ts` — WebSocket server (`:set port`). Redux stores mirror the app's lifted state and send lifted actions back;
+- `src/bridge.ts` — WebSocket server (`:set port`). Speaks openstate/client's protocol and Redux DevTools remote
+  (SocketCluster frames, jsan payloads), told apart by the first frame. Redux stores mirror the app's lifted state and send lifted actions back;
   `connect()` stores (zustand…) keep their history here and throw for what needs a reducer (skip, reorder, lock)
 - `client/` — `openstate/client`: installs `__REDUX_DEVTOOLS_EXTENSION__`/`_COMPOSE__`, built on `@redux-devtools/instrument`;
   `client/protocol.ts` holds the messages both sides speak
