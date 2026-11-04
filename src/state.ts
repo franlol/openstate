@@ -112,7 +112,7 @@ export class AppState {
   dragging: "sources" | "actions" | null = null
   // Action being dragged to a new place in the list.
   // The action being dragged with the mouse: the list as it was, and whether it had been moved before.
-  moving: { id: number; before: Action[]; wasMoved: boolean } | null = null
+  moving: { id: number; before: Action[]; wasMoved: boolean; hitCommit?: boolean } | null = null
   screenW = 120
   // Vim-style y/N question in the command line.
   confirm: { text: string; run: () => void } | null = null
@@ -453,13 +453,15 @@ export class AppState {
     if (!set) this.moved.set(key, (set = new Set()))
     return set
   }
-  // Where an action came from: in front of the first later-arrived action, as the app recorded it.
+  // Where an action came from: in front of the first later-arrived action that has not moved, as the app
+  // recorded it. Moved ones are left out, or one moved up would drag the others' slots along with it.
   // `by` is how many places it now sits below (positive) or above (negative) that slot.
   home(a: Action): { before: Action | undefined; by: number } | null {
     const st = this.store(a.storeKey)
-    if (!st || !this.moved.get(st.key)?.has(a.id)) return null
+    const moved = st && this.moved.get(st.key)
+    if (!st || !moved?.has(a.id)) return null
     const others = st.actions.filter((x) => x !== a)
-    const before = others.find((x) => x.seq > a.seq)
+    const before = others.find((x) => x.seq > a.seq && !moved.has(x.id))
     const slot = before ? others.indexOf(before) : others.length
     const by = st.actions.indexOf(a) - slot
     return by ? { before, by } : null
@@ -534,7 +536,12 @@ export class AppState {
       to = acts.indexOf(target)
     }
     // Neither @@INIT nor anything up to the commit can change place: stop just below them.
-    to = Math.max(to, Math.max(0, this.committedIndex(st)) + 1)
+    const base = this.committedIndex(st)
+    if (to <= Math.max(0, base)) {
+      to = Math.max(0, base) + 1
+      if (!d.m.hitCommit) this.notify(base > 0 ? "E: cannot move across the commit" : "E: the initial action cannot move", true)
+      d.m.hitCommit = true
+    }
     const from = acts.indexOf(a)
     if (to === from) return
     acts.splice(from, 1)
