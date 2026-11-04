@@ -189,7 +189,28 @@ export class AppState {
     return this.merge ? MERGED : this.activeKey
   }
 
+  // The UI asks for these several times per render, and again for every animation frame; each is
+  // recomputed only when one of the values it depends on changes (compared by identity).
+  private memos = new Map<string, { deps: unknown[]; value: unknown }>()
+  cached<T>(name: string, deps: unknown[], compute: () => T): T {
+    const m = this.memos.get(name)
+    if (m && m.deps.length === deps.length && m.deps.every((d, i) => Object.is(d, deps[i]))) return m.value as T
+    const value = compute()
+    this.memos.set(name, { deps, value })
+    return value
+  }
+  // Bumped where a list is reordered in place, which leaves its identity and length as they were.
+  private reorders = 0
+  // Bumped whenever apps send something: states, actions, connections.
+  dataRev = 0
+
   timeline(): Action[] {
+    const stores = this.merge ? this.allStores() : [this.store()]
+    const v = this.view()
+    const deps = [this.merge, this.filter, [...v.hidden].join("\n"), this.reorders, ...stores.flatMap((s) => [s?.actions, s?.actions.length])]
+    return this.cached("timeline", deps, () => this.computeTimeline())
+  }
+  private computeTimeline(): Action[] {
     const all = this.merge
       ? this.allStores()
           .flatMap((s) => s.actions)
@@ -231,6 +252,7 @@ export class AppState {
   }
 
   private onData() {
+    this.dataRev++
     const now = Date.now()
     // The first store to connect (or the next one, once the active app is removed) opens by itself.
     if (!this.store()) {
@@ -546,6 +568,7 @@ export class AppState {
     if (to === from) return
     acts.splice(from, 1)
     acts.splice(to, 0, a)
+    this.reorders++
     // The last action is selected as "follow the end"; once moved up, keep it selected by id.
     this.selectAction(a.id)
   }
@@ -889,8 +912,12 @@ export class AppState {
   // --- tree ---------------------------------------------------------------
   // Paths whose ancestors are opened automatically so changes are visible.
   revealed(): Set<string> {
+    const changes = this.changes()
+    return this.cached("revealed", [changes], () => this.computeRevealed(changes))
+  }
+  private computeRevealed(changes: Change[]): Set<string> {
     const out = new Set<string>()
-    for (const c of this.changes()) {
+    for (const c of changes) {
       const parts = c.path.split(".")
       for (let i = 1; i < parts.length; i++) out.add(parts.slice(0, i).join("."))
     }
@@ -905,8 +932,13 @@ export class AppState {
   treeRows(): TreeRow[] {
     const a = this.selected()
     if (!a) return []
-    const pin = this.view().pinned
-    return pin ? flatten(getPath(a.state, pin), this.effectiveExpanded(), pin) : flatten(a.state, this.effectiveExpanded())
+    const v = this.view()
+    const pin = v.pinned
+    // expanded and collapsed change in place, so they take part by content.
+    const deps = [a.state, pin, this.revealed(), [...v.expanded].join("\n"), [...v.collapsed].join("\n")]
+    return this.cached("treeRows", deps, () =>
+      pin ? flatten(getPath(a.state, pin), this.effectiveExpanded(), pin) : flatten(a.state, this.effectiveExpanded()),
+    )
   }
   // Pin the subtree under the tree cursor, or unpin when something is pinned already.
   togglePin() {

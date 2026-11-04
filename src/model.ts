@@ -122,7 +122,19 @@ export function getPath(value: unknown, path: string): unknown {
   return v
 }
 
+// States are never changed in place, so an object's preview holds for as long as the object lives.
+const previews = new WeakMap<object, Map<number, string>>()
+
 export function preview(v: unknown, max = 40): string {
+  if (!isObj(v)) return previewOf(v, max)
+  let byMax = previews.get(v)
+  if (!byMax) previews.set(v, (byMax = new Map()))
+  let s = byMax.get(max)
+  if (s === undefined) byMax.set(max, (s = previewOf(v, max)))
+  return s
+}
+
+function previewOf(v: unknown, max: number): string {
   let s: string
   if (v === undefined) s = "undefined"
   else if (typeof v === "string") s = JSON.stringify(v)
@@ -158,9 +170,19 @@ export function flatten(value: unknown, expanded: Set<string>, path = "", depth 
   return rows
 }
 
+// Per second: every row of the action list asks on every render.
+const clocks = new Map<number, string>()
+
 export function clock(t: number): string {
-  const d = new Date(t)
-  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":")
+  const sec = Math.floor(t / 1000)
+  let s = clocks.get(sec)
+  if (s === undefined) {
+    const d = new Date(t)
+    s = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":")
+    if (clocks.size > 10_000) clocks.clear()
+    clocks.set(sec, s)
+  }
+  return s
 }
 
 // Time since the previous action, 8 columns wide like the clock: "  +0.12s", "  +12.3s", " +2m05s".

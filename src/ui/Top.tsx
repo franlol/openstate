@@ -81,30 +81,34 @@ function trackModel(s: AppState, cells: number) {
   const last = Math.min(cells - 1, nowCell - start)
   const timeOf = (c: number) => (origin + start + c) * 1000
 
-  const perCell = new Map<number, number>()
-  for (const a of tl) perCell.set(cellOf(a.time), (perCell.get(cellOf(a.time)) ?? 0) + changeCount(a))
-  const peak = Math.max(3, ...perCell.values())
-  const watched = s.merge ? s.sources : s.sources.filter((x) => x.id === s.sourceOf(s.activeKey)?.id)
-  const grid: Cell[] = Array.from({ length: cells }, (_, c) => {
-    const from = timeOf(c)
-    return {
-      weight: perCell.get(start + c) ?? 0,
-      actions: [],
-      colors: new Map(),
-      offline:
-        c <= last &&
-        watched.some((src) =>
-          src.links.some((l, i) => !l.connected && l.time < from + 1000 && (src.links[i + 1]?.time ?? Date.now()) > from),
-        ),
+  // Rebuilt when the data, the window or the current second changes, not for every animation frame.
+  const { grid, peak } = s.cached("track", [tl, cells, start, nowCell, s.dataRev, s.merge], () => {
+    const perCell = new Map<number, number>()
+    for (const a of tl) perCell.set(cellOf(a.time), (perCell.get(cellOf(a.time)) ?? 0) + changeCount(a))
+    const peak = Math.max(3, ...perCell.values())
+    const watched = s.merge ? s.sources : s.sources.filter((x) => x.id === s.sourceOf(s.activeKey)?.id)
+    const grid: Cell[] = Array.from({ length: cells }, (_, c) => {
+      const from = timeOf(c)
+      return {
+        weight: perCell.get(start + c) ?? 0,
+        actions: [],
+        colors: new Map(),
+        offline:
+          c <= last &&
+          watched.some((src) =>
+            src.links.some((l, i) => !l.connected && l.time < from + 1000 && (src.links[i + 1]?.time ?? Date.now()) > from),
+          ),
+      }
+    })
+    for (const a of tl) {
+      const g = grid[cellOf(a.time) - start]
+      if (!g) continue
+      g.actions.push(a)
+      const color = s.sourceOf(a.storeKey)?.color ?? 0
+      g.colors.set(color, (g.colors.get(color) ?? 0) + changeCount(a) + 1)
     }
+    return { grid, peak }
   })
-  for (const a of tl) {
-    const g = grid[cellOf(a.time) - start]
-    if (!g) continue
-    g.actions.push(a)
-    const color = s.sourceOf(a.storeKey)?.color ?? 0
-    g.colors.set(color, (g.colors.get(color) ?? 0) + changeCount(a) + 1)
-  }
   const cur = sel ? cellOf(sel.time) - start : last
   return { tl, last, cur, peak, grid, timeOf, more: { before: start > 0, after: last < nowCell - start } }
 }
