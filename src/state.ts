@@ -933,6 +933,20 @@ export class AppState {
     })
   }
 
+  // enter in the theme picker: the previewed theme stays and is saved.
+  keepTheme() {
+    if (!this.picker) return
+    const id = themes[this.picker.index]!.id
+    this.picker = null
+    this.applySettings({ theme: id })
+  }
+
+  // esc in the theme picker: back to the theme it opened with.
+  cancelTheme() {
+    if (this.picker) this.setTheme(this.picker.prev)
+    this.picker = null
+  }
+
   // enter in the update card, or a click on it: install, or restart once installed.
   confirmUpdate() {
     if (this.update?.phase === "done") this.restart()

@@ -1,6 +1,6 @@
 import { RGBA, SyntaxStyle, TextAttributes, type MouseEvent } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
-import { createContext, useContext, useSyncExternalStore } from "react"
+import { createContext, useContext, useState, useSyncExternalStore } from "react"
 import type { AppState } from "../state"
 import type { Theme } from "../theme"
 
@@ -109,4 +109,56 @@ export function useSyntax(theme: Theme): SyntaxStyle {
     styleCache.set(theme.id, s)
   }
   return s
+}
+
+// A key on screen that a click runs too, as pressing it would: `enter update · esc later`. Without `run` it is only
+// a reminder, as for keys that make no sense as a click.
+export type Hint = { key: string; desc: string; run?: () => void }
+const HINT_SEP = " · "
+export const hintsWidth = (hs: Hint[], sep = HINT_SEP) =>
+  hs.reduce((n, h, i) => n + (i ? sep.length : 0) + h.key.length + 1 + h.desc.length, 0)
+
+export function Hints({ hints, bg, sep = HINT_SEP }: { hints: Hint[]; bg?: string; sep?: string }) {
+  const s = useApp()
+  const t = s.theme
+  const [hover, setHover] = useState<number | null>(null)
+  // Which hint is at column x of the line.
+  const at = (e: MouseEvent) => {
+    let x = e.x - e.currentTarget!.x
+    for (const [i, h] of hints.entries()) {
+      const w = h.key.length + 1 + h.desc.length
+      if (x < w) return x >= 0 && h.run ? i : null
+      x -= w + sep.length
+    }
+    return null
+  }
+  const parts = hints.flatMap((h, i): Part[] => [
+    ...(i ? [[sep, t.dim] as Part] : []),
+    [h.key, hover === i ? t.accent : t.fg, BOLD],
+    [` ${h.desc}`, hover === i ? t.fg : t.muted],
+  ])
+  return (
+    <Line
+      parts={parts}
+      bg={bg}
+      onMouseDown={(e) => {
+        const i = at(e)
+        if (i !== null) hints[i]!.run?.(), s.emit()
+      }}
+      onMouseMove={(e) => setHover(at(e))}
+      onMouseOut={() => setHover(null)}
+    />
+  )
+}
+
+// A card's last row: what is going on at the left, its keys at the right.
+export function Footer({ note = [], hints, width, bg }: { note?: Part[]; hints: Hint[]; width: number; bg?: string }) {
+  return (
+    <box flexDirection="row" height={1} flexShrink={0}>
+      <box flexGrow={1} overflow="hidden">
+        <Line parts={fit(note, width - hintsWidth(hints) - 2)} bg={bg} />
+      </box>
+      <Hints hints={hints} bg={bg} />
+    </box>
+  )
 }

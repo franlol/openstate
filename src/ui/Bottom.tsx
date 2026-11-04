@@ -1,6 +1,7 @@
 import type { MouseEvent } from "@opentui/core"
 import { stringifyKeySequence } from "@opentui/keymap"
-import { useActiveKeys, usePendingSequence } from "@opentui/keymap/react"
+import { useActiveKeys, useKeymap, usePendingSequence } from "@opentui/keymap/react"
+import { useState } from "react"
 import { format, OPTIONS } from "../settings"
 import type { AppState } from "../state"
 import { mix } from "../theme"
@@ -276,16 +277,18 @@ function SetSuggestions({ width, prefix }: { width: number; prefix: string }) {
   )
 }
 
-// which-key: while a key sequence is pending, list what can complete it.
+// which-key: while a key sequence is pending, list what can complete it; a click finishes it.
 export function WhichKey() {
   const s = useApp()
   const t = s.theme
+  const keymap = useKeymap()
   const pending = usePendingSequence()
   const active = useActiveKeys({ includeMetadata: true })
+  const [hover, setHover] = useState<string | null>(null)
   if (!pending.length || s.mode !== "normal") return null
   const rows = active
     .filter((k) => k.bindingAttrs?.desc)
-    .map((k) => ({ key: keyLabel(k.display), desc: String(k.bindingAttrs!.desc) }))
+    .map((k) => ({ key: keyLabel(k.display), desc: String(k.bindingAttrs!.desc), command: k.command }))
   if (!rows.length) return null
   const keyW = Math.max(...rows.map((r) => r.key.length))
   const w = Math.max(...rows.map((r) => keyW + r.desc.length + 2)) + 4
@@ -306,7 +309,19 @@ export function WhichKey() {
       zIndex={25}
     >
       {rows.map((r) => (
-        <Line key={r.key} parts={fit([[r.key.padEnd(keyW + 2), t.accent, BOLD], [r.desc, t.muted]], w - 3)} bg={t.panel} />
+        <Line
+          key={r.key}
+          parts={fit([[r.key.padEnd(keyW + 2), t.accent, BOLD], [r.desc, hover === r.key ? t.fg : t.muted]], w - 3)}
+          bg={hover === r.key ? t.selBg : t.panel}
+          onMouseDown={() => {
+            setHover(null)
+            keymap.clearPendingSequence()
+            // Our bindings' commands are plain functions that ignore their context.
+            if (typeof r.command === "function") (r.command as () => void)()
+          }}
+          onMouseMove={() => setHover(r.key)}
+          onMouseOut={() => setHover(null)}
+        />
       ))}
     </box>
   )

@@ -5,7 +5,7 @@ import { CONFIG_PATH, DEFAULTS, format, OPTIONS, show } from "../settings"
 import { REPO_URL, SHINE_MS } from "../state"
 import { updateCommand, VERSION } from "../update"
 import { mix, shineGlow, themes, titleShades } from "../theme"
-import { BOLD, fit, Line, scrollbar, spread, useApp, type Part } from "./kit"
+import { BOLD, fit, Footer, Hints, Line, scrollbar, spread, useApp, type Hint, type Part } from "./kit"
 import { globalBinds, keyLabel, panelBinds, type Bind } from "./keys"
 
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -87,9 +87,12 @@ export function Waiting() {
   const status: Part[] = s.listenError
     ? [["✗ ", t.remove, BOLD], [`not listening: ${s.listenError}`, t.remove], [" · :set port=<another>", t.muted]]
     : [...radar, ["   listening on ", t.muted], [`:${s.settings.port}`, t.fg, BOLD]]
-  const key = (k: string, desc: string): Part[] => [[k, t.fg, BOLD], [` ${desc}`, t.muted]]
-  const sep: Part = ["  ·  ", t.dim]
-  const keys: Part[] = [...key("c", "connect an app"), sep, ...key("d", "demo"), sep, ...key("?", "keys"), sep]
+  const sep = "  ·  "
+  const keys: Hint[] = [
+    { key: "c", desc: "connect an app", run: () => (s.connectCard = true) },
+    { key: "d", desc: "demo", run: () => s.startDemo() },
+    { key: "?", desc: "keys", run: () => (s.help = true) },
+  ]
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
       <Logo font="block" bg={t.bg} at={at} />
@@ -100,7 +103,10 @@ export function Waiting() {
         <Line parts={[["⚠ ", t.warn, BOLD], [`apps send to :8000 by default · :set port& goes back · c says how to point them here`, t.warn]]} bg={t.bg} />
       )}
       <box height={2} />
-      <RepoLink label="github" bg={t.bg} before={keys} />
+      <box flexDirection="row" height={1}>
+        <Hints hints={keys} bg={t.bg} sep={sep} />
+        <RepoLink label="github" bg={t.bg} before={[[sep, t.dim]]} />
+      </box>
     </box>
   )
 }
@@ -132,10 +138,11 @@ export function ConnectCard({ width }: { width: number }) {
   ]
   const w = Math.min(width - 4, 72)
   return (
-    <Modal title="connect an app" width={w} height={lines.length + 2}>
+    <Modal title="connect an app" width={w} height={lines.length + 3} foot={{ hints: [{ key: "esc", desc: "close", run: () => (s.connectCard = false) }] }}>
       {lines.map((parts, i) => (
         <Line key={i} parts={parts.length ? fit(parts, w - 4) : [[" ", t.dim]]} />
       ))}
+      <box height={1} />
     </Modal>
   )
 }
@@ -159,43 +166,6 @@ function bar(value: number, width: number, color: string, track: string): Part[]
 }
 
 const NOTES_ROWS = 7
-
-// Keys a card offers, which a click runs too: `enter update · esc later`.
-type Hint = { key: string; desc: string; run: () => void }
-const HINT_SEP = " · "
-const hintsWidth = (hs: Hint[]) => hs.reduce((n, h, i) => n + (i ? HINT_SEP.length : 0) + h.key.length + 1 + h.desc.length, 0)
-
-function Hints({ hints }: { hints: Hint[] }) {
-  const s = useApp()
-  const t = s.theme
-  const [hover, setHover] = useState<number | null>(null)
-  // Which hint is at column x of the line.
-  const at = (e: MouseEvent) => {
-    let x = e.x - e.currentTarget!.x
-    for (const [i, h] of hints.entries()) {
-      const w = h.key.length + 1 + h.desc.length
-      if (x < w) return x >= 0 ? i : null
-      x -= w + HINT_SEP.length
-    }
-    return null
-  }
-  const parts = hints.flatMap((h, i): Part[] => [
-    ...(i ? [[HINT_SEP, t.dim] as Part] : []),
-    [h.key, hover === i ? t.accent : t.fg, BOLD],
-    [` ${h.desc}`, hover === i ? t.fg : t.muted],
-  ])
-  return (
-    <Line
-      parts={parts}
-      onMouseDown={(e) => {
-        const i = at(e)
-        if (i !== null) hints[i]!.run(), s.emit()
-      }}
-      onMouseMove={(e) => setHover(at(e))}
-      onMouseOut={() => setHover(null)}
-    />
-  )
-}
 
 // :update, or the ↑ in the statusline: what the new version brings, then the install as it goes, then restart.
 export function UpdateCard({ width }: { width: number }) {
@@ -240,7 +210,7 @@ export function UpdateCard({ width }: { width: number }) {
   const shown = u.phase === "offer" ? 0 : pct
 
   return (
-    <Modal title="update" width={w} height={notesRows + 9}>
+    <Modal title="update" width={w} height={notesRows + 8} foot={{ note: status, hints: hint }}>
       <Line parts={spread([], [[VERSION, t.dim], ["  →  ", t.muted], [u.latest, t.accent, BOLD]], inner)} />
       <box height={1} />
       <box
@@ -261,12 +231,6 @@ export function UpdateCard({ width }: { width: number }) {
       </box>
       <box height={1} />
       <Line parts={[...bar(shown / 100, inner - 5, color, t.border), [`${shown}%`.padStart(5), shown ? t.fg : t.dim, BOLD]]} />
-      <box flexDirection="row" height={1}>
-        <box flexGrow={1} overflow="hidden">
-          <Line parts={fit(status, inner - hintsWidth(hint) - 2)} />
-        </box>
-        <Hints hints={hint} />
-      </box>
     </Modal>
   )
 }
@@ -300,13 +264,21 @@ function RepoLink(props: { width?: number; bg?: string; label?: string; before?:
   )
 }
 
-function Modal(props: { title: string; width: number; height: number; footer?: React.ReactNode; children: React.ReactNode }) {
+// A centred card. `foot` is its last row (a note, then its keys); `footer` sits on the bottom border.
+function Modal(props: {
+  title: string
+  width: number
+  height: number
+  foot?: { note?: Part[]; hints: Hint[] }
+  footer?: React.ReactNode
+  children: React.ReactNode
+}) {
   const t = useApp().theme
   return (
     <box position="absolute" top={0} left={0} width="100%" height="100%" alignItems="center" justifyContent="center" zIndex={30}>
       <box
         width={props.width}
-        height={props.height}
+        height={props.height + (props.foot ? 1 : 0)}
         border
         borderStyle="rounded"
         borderColor={t.borderActive}
@@ -318,6 +290,7 @@ function Modal(props: { title: string; width: number; height: number; footer?: R
         paddingRight={1}
       >
         {props.children}
+        {props.foot && <Footer note={props.foot.note} hints={props.foot.hints} width={props.width - 4} />}
         {/* Over the bottom border, at the right, like the panels' counters. */}
         {props.footer && (
           <box position="absolute" bottom={-1} right={1}>
@@ -334,7 +307,17 @@ export function ThemePicker() {
   const t = s.theme
   if (!s.picker) return null
   return (
-    <Modal title="theme" width={36} height={themes.length + 4}>
+    <Modal
+      title="theme"
+      width={36}
+      height={themes.length + 3}
+      foot={{
+        hints: [
+          { key: "enter", desc: "keep", run: () => s.keepTheme() },
+          { key: "esc", desc: "cancel", run: () => s.cancelTheme() },
+        ],
+      }}
+    >
       <select
         focused
         flexGrow={1}
@@ -353,15 +336,12 @@ export function ThemePicker() {
           if (s.picker) s.picker.index = i
           s.emit()
         }}
-        onSelect={(i) => {
-          s.picker = null
-          s.applySettings({ theme: themes[i]!.id })
+        onSelect={() => {
+          s.keepTheme()
           s.emit()
         }}
       />
-      <text>
-        <span fg={t.dim}>j/k preview · enter keep · esc cancel</span>
-      </text>
+      <box height={1} />
     </Modal>
   )
 }
@@ -378,7 +358,17 @@ export function SettingsCard({ width }: { width: number }) {
   const cur = OPTIONS[card.index]!
   const nameW = Math.max(...OPTIONS.map((o) => o.name.length)) + 2
   return (
-    <Modal title="settings" width={w} height={OPTIONS.length + 7}>
+    <Modal
+      title="settings"
+      width={w}
+      height={OPTIONS.length + 5}
+      foot={{
+        note: [[` saved to ${CONFIG_PATH.replace(homedir(), "~")}`, t.dim]],
+        hints: [
+          { key: "esc", desc: "close", run: () => (s.settingsCard = null) },
+        ],
+      }}
+    >
       {OPTIONS.map((o, i) => {
         const on = i === card.index
         const v = show(o.name, s.settings)
@@ -409,8 +399,6 @@ export function SettingsCard({ width }: { width: number }) {
       {/* The command-line form of the highlighted option, so the card also teaches :set. */}
       <Line parts={fit([[" :set ", t.dim], [format(cur.name, s.settings), t.fg], [`  ${cur.help}`, t.muted]], inner)} />
       <Line parts={[[" ", t.dim]]} />
-      <Line parts={fit([[" j/k option · h/l change · esc close · accent: changed from default", t.dim]], inner)} />
-      <Line parts={fit([[` saved to ${CONFIG_PATH.replace(homedir(), "~")}`, t.dim]], inner)} />
     </Modal>
   )
 }
@@ -422,6 +410,8 @@ export function Help({ width, height }: { width: number; height: number }) {
   // List navigation is shared by every panel, so it is listed once under "lists".
   const nav = new Set(["j", "k", "up", "down", "left", "right", "ctrl+d", "ctrl+u", "<g>g", "shift+g", "ctrl+l", "ctrl+h"])
   const all = [
+    // Said once here, for panels and cards alike, so the cards need not repeat it.
+    { key: "hjkl", desc: "move everywhere", group: "lists", run: () => {} },
     ...globalBinds(s),
     ...panelBinds(s, "actions").map((b) => ({ ...b, group: nav.has(b.key) ? "lists" : "actions" })),
     ...panelBinds(s, "sources").filter((b) => !nav.has(b.key)),
@@ -433,7 +423,7 @@ export function Help({ width, height }: { width: number; height: number }) {
   const groups = new Map<string, Bind[]>()
   for (const b of all) {
     const g = groups.get(b.group) ?? []
-    if (!["up", "down", "left", "right", "ctrl+l", "ctrl+h"].includes(b.key) && !g.some((x) => x.desc === b.desc)) g.push(b)
+    if (!["j", "k", "up", "down", "left", "right", "ctrl+l", "ctrl+h"].includes(b.key) && !g.some((x) => x.desc === b.desc)) g.push(b)
     groups.set(b.group, g)
   }
   const w = Math.min(width - 4, 96)

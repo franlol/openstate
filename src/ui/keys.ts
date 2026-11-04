@@ -294,10 +294,7 @@ export function useGlobalKeys(s: AppState) {
           key: "escape",
           desc: "cancel",
           group: "theme",
-          run: () => {
-            if (s.picker) s.setTheme(s.picker.prev)
-            s.picker = null
-          },
+          run: () => s.cancelTheme(),
         },
       ]),
     }),
