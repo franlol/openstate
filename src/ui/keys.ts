@@ -93,6 +93,9 @@ export function panelBinds(s: AppState, panel: Focus): Bind[] {
         (n) => s.step(n),
         (end) => (end ? s.goLive() : s.step(-Infinity)),
       ),
+      { key: "shift+j", desc: "move action down", group: panel, run: () => s.moveAction(1) },
+      { key: "shift+k", desc: "move action up", group: panel, run: () => s.moveAction(-1) },
+      { key: "shift+u", desc: "restore moved action", group: panel, run: () => s.restoreAction() },
       { key: "return", desc: "inspect", group: panel, run: () => (s.focus = "inspector") },
     ]
   }

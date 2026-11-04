@@ -141,7 +141,7 @@ export function Help({ width, height }: { width: number; height: number }) {
           </box>
         ))}
       </box>
-      <Line parts={fit([["mouse: click rows, tabs, crumbs · drag the track to time travel · drag borders to resize · esc closes", t.dim]], w - 4)} />
+      <Line parts={fit([["mouse: click rows, tabs, crumbs · drag the track, actions or borders · esc closes", t.dim]], w - 4)} />
     </Modal>
   )
 }

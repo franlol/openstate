@@ -1,7 +1,7 @@
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { Fragment, useEffect, useRef, type ReactNode } from "react"
-import { changeCount, clock } from "../model"
-import type { Focus } from "../state"
+import { changeCount, clock, type Action } from "../model"
+import type { AppState, Focus } from "../state"
 import { mix } from "../theme"
 import { BOLD, DIM, fit, Line, scrollbar, spread, STRIKE, useApp, type Part } from "./kit"
 import { usePanelKeys } from "./keys"
@@ -142,6 +142,17 @@ export function Sources({ width }: { width: number }) {
 
 const WINDOW = 200
 
+// Row the ghost goes above: the first shown action of the store at or after the original slot.
+function ghostIndex(s: AppState, tl: Action[], sel: Action | undefined, home: { before?: Action } | null): number {
+  if (!sel || !home) return -1
+  const st = s.store(sel.storeKey)
+  const before = home.before
+  if (!st || !before) return tl.length
+  const at = st.actions.indexOf(before)
+  const i = tl.findIndex((x) => x.storeKey === st.key && x !== sel && st.actions.indexOf(x) >= at)
+  return i < 0 ? tl.length : i
+}
+
 export function Actions({ width }: { width: number }) {
   const s = useApp()
   const t = s.theme
@@ -155,11 +166,41 @@ export function Actions({ width }: { width: number }) {
   const visible = tl.slice(from, from + WINDOW)
   const locked = s.target()?.locked ? " · ◆ locked" : ""
   const hidden = s.view().hidden.size
+  const moved = s.merge ? 0 : s.movedCount(s.activeKey)
+  // While a moved action is selected, a ghost row marks the slot it came from.
+  const home = sel ? s.home(sel) : null
+  const ghostAt = ghostIndex(s, tl, sel, home)
+  // Amber like TRAVEL: the list no longer shows what the app really did.
+  const soft = mix(t.panel, t.warn, 0.55)
+  const ghost = home && sel && (
+    <Line
+      key="ghost"
+      id="ghost"
+      parts={fit(
+        [
+          [" ╌╌ ", soft],
+          [sel.type, t.warn],
+          [" was here ".padEnd(Math.max(0, inner - sel.type.length - 4), "╌"), soft],
+        ],
+        inner,
+      )}
+      bg={t.panel}
+      onMouseDown={() => {
+        s.restoreAction(sel)
+        s.emit()
+      }}
+    />
+  )
   // Visual mode selection, inclusive of anchor and cursor.
   const range = new Set(s.mode === "visual" ? s.visualRange().map((a) => a.id) : [])
   const title = (s.filter ? `actions /${s.filter}` : s.merge ? "actions · all apps" : "actions") + locked
   return (
-    <Panel id="actions" title={title} bottomTitle={(hidden ? ` ${hidden} hidden ·` : "") + ` ${tl.length} `} width={width}>
+    <Panel
+      id="actions"
+      title={title}
+      bottomTitle={(moved ? ` ${moved} moved ·` : "") + (hidden ? ` ${hidden} hidden ·` : "") + ` ${tl.length} `}
+      width={width}
+    >
       <scrollbox ref={ref} flexGrow={1} stickyScroll stickyStart="bottom" scrollbarOptions={scrollbar(t)}>
         {visible.map((a, k) => {
           const i = from + k
@@ -172,24 +213,41 @@ export function Actions({ width }: { width: number }) {
           const bg = flash ? mix(base, t.flash, flash) : base
           const typeFg = a.skipped || future ? t.dim : isSel ? t.fg : t.fg
           const attrs = a.skipped ? STRIKE : isSel ? BOLD : undefined
+          const out = !!s.home(a)
           const left: Part[] = [
             [isSel ? "▌" : " ", t.accent],
-            [clock(a.time) + " ", future ? t.dim : t.muted],
+            // Moved actions sit out of time order; dim their clock so that reads as expected.
+            [clock(a.time) + " ", future || out ? t.dim : t.muted],
           ]
           if (src) left.push([src.name.slice(0, 8).padEnd(9), t.sources[src.color % t.sources.length]!])
           if (a.fromDevtools) left.push(["⇡ ", t.add, BOLD])
+          if (out) left.push(["⇅ ", t.warn, BOLD])
           left.push([a.type, typeFg, attrs])
           const right: Part[] = changes ? [[` ±${changes} `, future ? t.dim : t.muted]] : [[" ", t.dim]]
           // Revert returns to the state right below this line.
           const committed = s.store(a.storeKey)?.commitId === a.id
           return (
             <Fragment key={a.id}>
+              {i === ghostAt && ghost}
               <Line
                 id={`act-${a.id}`}
                 parts={spread(left, right, inner)}
                 bg={bg}
                 onMouseDown={() => {
                   s.selectAction(a.id)
+                  s.moving = { id: a.id }
+                  s.emit()
+                }}
+                onMouseDrag={(e) => {
+                  // The row under the pointer, so ghost and commit lines in between do not count.
+                  const row = ref.current?.getChildren().find((c) => c.screenY === e.y && /^(act-|ghost)/.test(c.id))
+                  // Over its own ghost: back to the original place.
+                  if (row?.id === "ghost") s.restoreAction()
+                  else if (row) s.dragTo(Number(row.id.slice(4)))
+                  s.emit()
+                }}
+                onMouseUp={() => {
+                  s.moving = null
                   s.emit()
                 }}
               />
@@ -199,6 +257,7 @@ export function Actions({ width }: { width: number }) {
             </Fragment>
           )
         })}
+        {ghostAt === tl.length && ghost}
         {!tl.length && <Line parts={fit([["  no actions" + (s.filter ? " match" : " yet"), t.muted, DIM]], inner)} />}
       </scrollbox>
     </Panel>

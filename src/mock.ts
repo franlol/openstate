@@ -256,6 +256,15 @@ function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () =
         state = store.actions[store.actions.length - 1]?.state ?? spec.init
         onChange()
       },
+      reorder: (id, beforeId) => {
+        const acts = store.actions
+        const from = acts.findIndex((x) => x.id === id)
+        if (from < 1) return
+        const [a] = acts.splice(from, 1)
+        const to = beforeId === null ? acts.length : acts.findIndex((x) => x.id === beforeId)
+        acts.splice(to < 0 ? acts.length : to, 0, a!)
+        recompute()
+      },
       sweep: () => {
         store.actions = store.actions.filter((a) => !a.skipped)
         onChange()

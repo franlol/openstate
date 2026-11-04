@@ -101,7 +101,17 @@ export function CmdLine({ width }: { width: number }) {
   if (s.confirm)
     return <Line parts={fit([[`${s.confirm.text} `, t.warn, BOLD], ["[y/N]", t.fg]], width)} bg={t.bg} />
   const msg = s.message && s.message.until > Date.now() ? s.message : null
-  const left: Part[] = msg ? [[msg.text, msg.error ? t.remove : t.fg, msg.error ? BOLD : undefined]] : []
+  const home = s.selected() && s.home(s.selected()!)
+  const left: Part[] = msg
+    ? [[msg.text, msg.error ? t.remove : t.fg, msg.error ? BOLD : undefined]]
+    : home
+      ? [
+          ["⇅ ", t.warn, BOLD],
+          [`moved ${Math.abs(home.by)} ${home.by < 0 ? "↑" : "↓"} · `, t.muted],
+          ["U", t.fg, BOLD],
+          [" restores", t.muted],
+        ]
+      : []
   const showcmd: Part[] = pending.length ? [[`${keyLabel(stringifyKeySequence(pending, { preferDisplay: true }))} `, t.fg, BOLD]] : []
   return <Line parts={spread(left, showcmd, width)} bg={t.bg} />
 }

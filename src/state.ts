@@ -42,6 +42,7 @@ export const commands: Command[] = [
   { name: "sweep", desc: "remove skipped actions", run: (s) => s.sweep() },
   { name: "reset", desc: "back to the initial state", run: (s) => s.reset() },
   { name: "lock", desc: "lock / unlock the app's own changes", run: (s) => s.toggleLock() },
+  { name: "unmove", desc: "put moved actions back in arrival order", run: (s) => s.unmoveAll() },
   { name: "unhide", desc: "show hidden action types again", run: (s) => s.unhideAll() },
   { name: "pin", desc: "pin / unpin the subtree under the cursor", run: (s) => s.togglePin() },
   { name: "play", desc: "play / pause actions from the cursor", run: (s) => s.togglePlay() },
@@ -96,6 +97,8 @@ export class AppState {
   layout: { sources: number; actions: number | null } = { sources: 24, actions: null }
   // Border being dragged with the mouse: the panel on its left.
   dragging: "sources" | "actions" | null = null
+  // Action being dragged to a new place in the list.
+  moving: { id: number } | null = null
   screenW = 120
   // Vim-style y/N question in the command line.
   confirm: { text: string; run: () => void } | null = null
@@ -115,6 +118,8 @@ export class AppState {
   visual: number | null = null
 
   private views = new Map<string, View>()
+  // Actions the user moved, per store; one counts as moved while it is out of its arrival slot.
+  private moved = new Map<string, Set<number>>()
   private lastSeen = new Map<string, number>()
   private listeners = new Set<() => void>()
   private version = 0
@@ -311,6 +316,7 @@ export class AppState {
     if (!n) return this.notify("nothing to revert")
     this.ask(`revert ${n} action${n > 1 ? "s" : ""} to ${st.commitId === null ? "the initial state" : "the commit"}?`, () => {
       st.conn.revert()
+      this.moved.delete(st.key)
       this.goLive()
       this.notify(`reverted ${n} action${n > 1 ? "s" : ""}`)
     })
@@ -321,6 +327,7 @@ export class AppState {
     this.ask(`reset ${st.name} to its initial state, dropping all ${st.actions.length - 1} actions?`, () => {
       st.conn.commit(null)
       st.conn.revert()
+      this.moved.delete(st.key)
       this.goLive()
       this.notify(`${st.name} reset`)
     })
@@ -334,6 +341,83 @@ export class AppState {
       st.conn.sweep()
       this.notify(`swept ${n} action${n > 1 ? "s" : ""}`)
     })
+  }
+  // Move the selected action past its neighbour in the list (same store, as shown).
+  moveAction(dir: 1 | -1): boolean {
+    const a = this.selected()
+    const st = this.target()
+    if (!a || !st) return false
+    const shown = this.timeline().filter((x) => x.storeKey === st.key)
+    const other = shown[shown.indexOf(a) + dir]
+    if (!other) return false
+    // Neither @@INIT nor anything up to the commit can change place.
+    const base = this.committedIndex(st)
+    if (Math.min(st.actions.indexOf(a), st.actions.indexOf(other)) <= Math.max(0, base))
+      return this.notify(base > 0 ? "E: cannot move across the commit" : "E: the initial action cannot move", true), false
+    const beforeId = dir < 0 ? other.id : (st.actions[st.actions.indexOf(other) + 1]?.id ?? null)
+    st.conn.reorder(a.id, beforeId)
+    this.movedIds(st.key).add(a.id)
+    this.selectAction(a.id)
+    return true
+  }
+  private movedIds(key: string) {
+    let set = this.moved.get(key)
+    if (!set) this.moved.set(key, (set = new Set()))
+    return set
+  }
+  // Where an action came from: in front of the first later-arrived action, as the app recorded it.
+  // `by` is how many places it now sits below (positive) or above (negative) that slot.
+  home(a: Action): { before: Action | undefined; by: number } | null {
+    const st = this.store(a.storeKey)
+    if (!st || !this.moved.get(st.key)?.has(a.id)) return null
+    const others = st.actions.filter((x) => x !== a)
+    const before = others.find((x) => x.seq > a.seq)
+    const slot = before ? others.indexOf(before) : others.length
+    const by = st.actions.indexOf(a) - slot
+    return by ? { before, by } : null
+  }
+  movedCount(key: string): number {
+    const st = this.store(key)
+    return st ? st.actions.filter((a) => this.home(a)).length : 0
+  }
+  // Put an action back in its original place.
+  restoreAction(a = this.selected()): boolean {
+    const h = a && this.home(a)
+    const st = a && this.store(a.storeKey)
+    if (!a || !h || !st) return this.notify("not a moved action"), false
+    const base = this.committedIndex(st)
+    if (h.before && st.actions.indexOf(h.before) <= base) return this.notify("E: its place is behind the commit", true), false
+    st.conn.reorder(a.id, h.before?.id ?? null)
+    this.movedIds(st.key).delete(a.id)
+    this.selectAction(a.id)
+    this.notify(`${a.type} back in place · later states recomputed`)
+    return true
+  }
+  unmoveAll() {
+    const st = this.target()
+    if (!st) return
+    const moved = st.actions.filter((a) => this.home(a))
+    if (!moved.length) return this.notify("no moved actions")
+    const n = moved.length
+    this.ask(`put ${n} moved action${n > 1 ? "s" : ""} back in arrival order?`, () => {
+      // Oldest first, so each one lands next to neighbours that are already back.
+      let done = 0
+      for (const a of moved.sort((x, y) => x.seq - y.seq)) if (this.home(a) && this.restoreAction(a)) done++
+      this.notify(`${done} action${done === 1 ? "" : "s"} back in place`)
+    })
+  }
+  // Mouse drag: step the dragged action until it sits where the pointed-at action is,
+  // stopping at the first move that is refused.
+  dragTo(targetId: number) {
+    const m = this.moving
+    const a = this.selected()
+    if (!m || !a || a.id !== m.id || targetId === a.id) return
+    const shown = this.timeline().filter((x) => x.storeKey === a.storeKey)
+    const target = shown.find((x) => x.id === targetId)
+    if (!target) return
+    let n = shown.indexOf(target) - shown.indexOf(a)
+    const dir = n > 0 ? 1 : -1
+    while (n !== 0 && this.moveAction(dir)) n -= dir
   }
   toggleLock() {
     const st = this.target()
@@ -503,6 +587,7 @@ export class AppState {
       // The app renumbers from zero; nothing here is new, so nothing flashes.
       this.lastSeen.set(st.key, n)
       st.conn.import(h)
+      this.moved.delete(st.key)
       const v = this.view(st.key)
       v.cursor = null
       v.trackFrom = null

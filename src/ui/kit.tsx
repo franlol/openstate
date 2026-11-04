@@ -46,6 +46,7 @@ export function Line(props: {
   bg?: string
   onMouseDown?: (e: MouseEvent) => void
   onMouseDrag?: (e: MouseEvent) => void
+  onMouseUp?: (e: MouseEvent) => void
   onMouseMove?: (e: MouseEvent) => void
   onMouseOut?: (e: MouseEvent) => void
   onMouseScroll?: (e: MouseEvent) => void
@@ -58,6 +59,8 @@ export function Line(props: {
       backgroundColor={props.bg}
       onMouseDown={props.onMouseDown}
       onMouseDrag={props.onMouseDrag}
+      onMouseUp={props.onMouseUp}
+      onMouseDragEnd={props.onMouseUp}
       onMouseMove={props.onMouseMove}
       onMouseOut={props.onMouseOut}
       onMouseScroll={props.onMouseScroll}

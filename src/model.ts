@@ -33,6 +33,8 @@ export interface StoreConn {
   commit(id: number | null): void
   // Drop every action after the commit (or after init) and restore that state.
   revert(): void
+  // Move an action in front of another one (null: to the end); later states are recomputed.
+  reorder(id: number, beforeId: number | null): void
   // Remove skipped actions for good.
   sweep(): void
   // While locked the app's own dispatches are ignored.
