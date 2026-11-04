@@ -340,6 +340,14 @@ export function ThemePicker() {
           s.keepTheme()
           s.emit()
         }}
+        // A click previews a theme, like moving to it; a click on the previewed one keeps it, like enter.
+        onMouseDown={(e) => {
+          const i = e.y - e.currentTarget!.y
+          if (!s.picker || !themes[i]) return
+          if (i === s.picker.index) s.keepTheme()
+          else (s.picker.index = i), s.setTheme(themes[i]!.id)
+          s.emit()
+        }}
       />
       <box height={1} />
     </Modal>
