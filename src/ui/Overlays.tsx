@@ -376,6 +376,7 @@ export function SettingsCard({ width }: { width: number }) {
   const inner = w - 4
   const valW = Math.max(...OPTIONS.flatMap((o) => (o.values?.() ?? [show(o.name, s.settings)]).map((v) => v.length))) + 5
   const cur = OPTIONS[card.index]!
+  const nameW = Math.max(...OPTIONS.map((o) => o.name.length)) + 2
   return (
     <Modal title="settings" width={w} height={OPTIONS.length + 7}>
       {OPTIONS.map((o, i) => {
@@ -390,7 +391,7 @@ export function SettingsCard({ width }: { width: number }) {
             parts={fit(
               [
                 [on ? "▌" : " ", t.accent],
-                [o.name.padEnd(8), on ? t.fg : t.sources[1]!, BOLD],
+                [o.name.padEnd(nameW), on ? t.fg : t.sources[1]!, BOLD],
                 [value.padEnd(valW), changed ? t.accent : t.fg, changed ? BOLD : undefined],
                 [o.desc, t.muted],
               ],
