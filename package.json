@@ -1,6 +1,12 @@
 {
   "name": "openstate",
   "version": "0.1.0",
+  "description": "A terminal UI to inspect and time-travel app state, Redux DevTools compatible",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/franlol/openstate.git"
+  },
+  "homepage": "https://github.com/franlol/openstate",
   "type": "module",
   "private": true,
   "bin": {

@@ -1,6 +1,8 @@
+import type { MouseEvent } from "@opentui/core"
 import { useEffect, useState } from "react"
 import { homedir } from "node:os"
 import { CONFIG_PATH, DEFAULTS, format, OPTIONS, show } from "../settings"
+import { REPO_URL } from "../state"
 import { themes, titleShades } from "../theme"
 import { BOLD, fit, Line, useApp, type Part } from "./kit"
 import { globalBinds, keyLabel, panelBinds, type Bind } from "./keys"
@@ -98,7 +100,36 @@ export function Waiting() {
   )
 }
 
-function Modal(props: { title: string; width: number; height: number; children: React.ReactNode }) {
+// The project's page, to star it; lights up under the pointer, a click opens it. `before` and `after` frame it
+// without being part of the link.
+function RepoLink(props: { width?: number; bg?: string; label?: string; before?: Part[]; after?: Part[] }) {
+  const { width, bg, label = REPO_URL.replace(/^https:\/\//, ""), before = [], after = [] } = props
+  const s = useApp()
+  const t = s.theme
+  const [hover, setHover] = useState(false)
+  const link: Part[] = [
+    ["★ ", t.warn, hover ? BOLD : undefined],
+    [label, hover ? t.fg : t.muted, hover ? BOLD : undefined],
+  ]
+  const lenOf = (ps: Part[]) => ps.reduce((n, [x]) => n + x.length, 0)
+  const parts = [...before, ...link, ...after]
+  // Only the link itself responds, not what frames it or the rest of the line.
+  const over = (e: MouseEvent) => {
+    const x = e.x - e.currentTarget!.x
+    return x >= lenOf(before) && x < lenOf(before) + lenOf(link)
+  }
+  return (
+    <Line
+      parts={width ? fit(parts, width) : parts}
+      bg={bg}
+      onMouseDown={(e) => over(e) && (s.openRepo(), s.emit())}
+      onMouseMove={(e) => setHover(over(e))}
+      onMouseOut={() => setHover(false)}
+    />
+  )
+}
+
+function Modal(props: { title: string; width: number; height: number; footer?: React.ReactNode; children: React.ReactNode }) {
   const t = useApp().theme
   return (
     <box position="absolute" top={0} left={0} width="100%" height="100%" alignItems="center" justifyContent="center" zIndex={30}>
@@ -116,6 +147,12 @@ function Modal(props: { title: string; width: number; height: number; children: 
         paddingRight={1}
       >
         {props.children}
+        {/* Over the bottom border, at the right, like the panels' counters. */}
+        {props.footer && (
+          <box position="absolute" bottom={-1} right={1}>
+            {props.footer}
+          </box>
+        )}
       </box>
     </box>
   )
@@ -241,7 +278,12 @@ export function Help({ width, height }: { width: number; height: number }) {
   // The logo is the first thing to go when the terminal is short.
   const logo = height - 2 >= rows + 7
   return (
-    <Modal title="keys" width={w} height={Math.min(height - 2, rows + (logo ? 7 : 4))}>
+    <Modal
+      title="keys"
+      width={w}
+      height={Math.min(height - 2, rows + (logo ? 6 : 3))}
+      footer={<RepoLink label="github" bg={t.panel} before={[[" ", t.dim]]} after={[[" ", t.dim]]} />}
+    >
       {logo && <Logo font="tiny" bg={t.panel} />}
       <box flexDirection="row" flexGrow={1} overflow="hidden">
         {cols.map((col, i) => (
@@ -252,7 +294,6 @@ export function Help({ width, height }: { width: number; height: number }) {
           </box>
         ))}
       </box>
-      <Line parts={fit([["mouse: click rows, tabs, crumbs · drag the track, actions or borders · esc closes", t.dim]], w - 4)} />
     </Modal>
   )
 }

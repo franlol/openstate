@@ -58,6 +58,7 @@ export const commands: Command[] = [
 const FLASH_MS = 900
 export const SHINE_MS = 700
 export const SPEEDS = [0.5, 1, 2, 4, 8]
+export const REPO_URL = "https://github.com/franlol/openstate"
 
 export type Draft = {
   storeKey: string
@@ -734,6 +735,24 @@ export class AppState {
       this.notify(ok ? `yanked ${label} · ${text.length} chars` : "E: clipboard not available", !ok)
       this.emit()
     })
+  }
+
+  // ★ github in the help and the waiting screen. Starring needs GitHub's page, so open the repo there; over SSH the
+  // browser would open on the other machine, so copy the link instead.
+  openRepo() {
+    const copy = () =>
+      void this.copyText(REPO_URL).then((ok) => {
+        this.notify(ok ? `★ ${REPO_URL} · link copied` : `★ ${REPO_URL}`)
+        this.emit()
+      })
+    if (process.env.SSH_CONNECTION) return copy()
+    const cmd = process.platform === "darwin" ? ["open"] : process.platform === "win32" ? ["cmd", "/c", "start", ""] : ["xdg-open"]
+    try {
+      Bun.spawn([...cmd, REPO_URL], { stdio: ["ignore", "ignore", "ignore"] }).exited.then((code) => (code ? copy() : undefined))
+      this.notify(`★ opening ${REPO_URL} · thanks!`)
+    } catch {
+      copy()
+    }
   }
 
   // --- import / export ------------------------------------------------------------
