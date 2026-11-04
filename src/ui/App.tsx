@@ -5,7 +5,7 @@ import { DispatchCard } from "./Dispatch"
 import { Inspector } from "./Inspector"
 import { useApp } from "./kit"
 import { useGlobalKeys } from "./keys"
-import { ConnectCard, Help, SettingsCard, Splash, ThemePicker, Waiting } from "./Overlays"
+import { ConnectCard, Help, UpdateCard, SettingsCard, Splash, ThemePicker, Waiting } from "./Overlays"
 import { Actions, Sources } from "./Panels"
 import { Header, Track } from "./Top"
 
@@ -57,6 +57,7 @@ export function App() {
       <ThemePicker />
       <SettingsCard width={width} />
       <ConnectCard width={width} />
+      <UpdateCard width={width} />
       <Help width={width} height={height} />
     </box>
   )

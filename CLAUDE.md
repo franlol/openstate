@@ -32,6 +32,8 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
 - `src/mock.ts` — fake apps with deterministic reducers implementing `StoreConn`; the real bridge must match it
 - `src/settings.ts` — `:set` options (definitions, vim-style parser, config file at `~/.config/openstate/config`).
   A new option needs its entry in `OPTIONS`, `Settings` and `DEFAULTS`; the card, completion and file follow
+- `src/update.ts` — `:update`: latest version from npm (`npm_config_registry` points it at a local fake), the install
+  command from where openstate is installed, and the install's progress; `src/main.tsx` restarts into the new version
 - `src/theme.ts` — theme tokens; never hardcode colours in components
 - `src/ui/keys.ts` — every keybinding, also feeds the help overlay and status hints
 - `src/ui/kit.tsx` — `Line`/`Part` rendering helpers (`fit`, `spread`), syntax styles

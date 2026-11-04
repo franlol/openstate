@@ -40,6 +40,8 @@ type Link = {
 export type Bridge = {
   sources: Source[]
   listen(port: number): string | null
+  // Frees the port, e.g. for the new openstate after an update.
+  close(): void
   setMaxAge(n: number): void
 }
 
@@ -439,6 +441,10 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
         const code = (e as { code?: string }).code
         return code === "EADDRINUSE" ? `port ${port} is in use` : (e as Error).message
       }
+    },
+    close() {
+      server?.stop(true)
+      server = null
     },
     setMaxAge(n) {
       // Remote apps set their own maxAge in their devtools options.

@@ -10,6 +10,7 @@ export type Settings = {
   flash: boolean
   theme: string
   port: number
+  updatecheck: boolean
 }
 export type OptionName = keyof Settings
 
@@ -55,10 +56,16 @@ export const OPTIONS: Option[] = [
     max: 65535,
     typed: true,
   },
+  {
+    name: "updatecheck",
+    desc: "look for a new version on start",
+    help: "asks npm once per start; :update always can",
+    kind: "bool",
+  },
   { name: "theme", desc: "colour theme", help: "also :theme, which previews them", kind: "enum", values: () => themes.map((t) => t.id) },
 ]
 
-export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, theme: themes[0]!.id, port: 8000 }
+export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, theme: themes[0]!.id, port: 8000, updatecheck: true }
 
 export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "openstate", "config")
 

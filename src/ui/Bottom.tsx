@@ -14,6 +14,7 @@ function modeOf(s: AppState): { name: string; color: string } {
   if (s.help) return { name: "HELP", color: t.sources[1]! }
   if (s.picker) return { name: "THEME", color: t.sources[1]! }
   if (s.settingsCard) return { name: "SET", color: t.sources[1]! }
+  if (s.update?.card) return { name: "UPDATE", color: t.sources[1]! }
   if (s.mode === "command") return { name: "COMMAND", color: t.warn }
   if (s.mode === "filter") return { name: "FILTER", color: t.add }
   if (s.mode === "insert") return { name: "INSERT", color: t.add }
@@ -60,7 +61,17 @@ export function StatusLine({ width }: { width: number }) {
   if (s.merge) left.push({ text: " ⧉ all apps ", fg: t.fg, bg: c, click: emit(() => s.toggleMerge()) })
   if (s.filter) left.push({ text: ` /${s.filter} `, fg: t.add, bg: c, click: emit(() => (s.filter = "")) })
 
+  const u = s.update
   const right: Seg[] = [
+    ...(u
+      ? [
+          u.phase === "running"
+            ? { text: ` ↑ ${Math.round(u.progress.value * 100)}% `, fg: t.accent, bg: c, bold: true, click: emit(() => (u.card = true)) }
+            : u.phase === "done"
+              ? { text: ` ↑ ${u.latest} installed · :update `, fg: t.add, bg: c, bold: true, click: emit(() => (u.card = true)) }
+              : { text: ` ↑ ${u.latest} · :update `, fg: t.accent, bg: c, bold: true, click: emit(() => (u.card = true)) },
+        ]
+      : []),
     s.demo
       ? { text: " demo data ", fg: t.dim, bg: c }
       : s.listenError

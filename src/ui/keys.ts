@@ -148,7 +148,7 @@ const layer = (s: AppState, binds: Bind[]) => ({
 
 // Mode string drives which layers are live: normal-mode keys must not eat typing.
 const modeOf = (s: AppState) =>
-  s.help ? "help" : s.picker ? "picker" : s.settingsCard ? "settings" : s.confirm ? "confirm" : s.connectCard ? "connect" : s.mode
+  s.help ? "help" : s.picker ? "picker" : s.settingsCard ? "settings" : s.confirm ? "confirm" : s.connectCard ? "connect" : s.update?.card ? "update" : s.mode
 
 export function useGlobalKeys(s: AppState) {
   const normal = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "normal"), [s])
@@ -171,6 +171,7 @@ export function useGlobalKeys(s: AppState) {
 
   // The waiting screen, before any app: its own keys, above the normal ones (c is commit once there is a store).
   const waiting = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s) === "normal" && !s.store(), (on) => on), [s])
+  const update = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "update"), [s])
   const connect = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "connect"), [s])
 
   useBindings(() => ({ enabled: normal, ...layer(s, globalBinds(s)) }), [normal])
@@ -196,6 +197,26 @@ export function useGlobalKeys(s: AppState) {
     }),
     [connect],
   )
+  useBindings(() => {
+    const close = () => s.closeUpdate()
+    return {
+      enabled: update,
+      ...layer(s, [
+        {
+          key: "return",
+          desc: "update / restart",
+          group: "update",
+          run: () => s.confirmUpdate(),
+        },
+        { key: "j", desc: "scroll the notes", group: "update", run: () => s.scrollNotes(1) },
+        { key: "k", desc: "scroll the notes", group: "update", run: () => s.scrollNotes(-1) },
+        { key: "down", desc: "scroll the notes", group: "update", run: () => s.scrollNotes(1) },
+        { key: "up", desc: "scroll the notes", group: "update", run: () => s.scrollNotes(-1) },
+        { key: "escape", desc: "close", group: "update", run: close },
+        { key: "q", desc: "close", group: "update", run: close },
+      ]),
+    }
+  }, [update])
   useBindings(
     () => ({
       enabled: confirm,

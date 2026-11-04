@@ -1,10 +1,11 @@
-import type { MouseEvent } from "@opentui/core"
-import { Fragment, useEffect, useState } from "react"
+import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
+import { Fragment, useEffect, useRef, useState } from "react"
 import { homedir } from "node:os"
 import { CONFIG_PATH, DEFAULTS, format, OPTIONS, show } from "../settings"
 import { REPO_URL, SHINE_MS } from "../state"
+import { updateCommand, VERSION } from "../update"
 import { mix, shineGlow, themes, titleShades } from "../theme"
-import { BOLD, fit, Line, useApp, type Part } from "./kit"
+import { BOLD, fit, Line, scrollbar, spread, useApp, type Part } from "./kit"
 import { globalBinds, keyLabel, panelBinds, type Bind } from "./keys"
 
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -135,6 +136,137 @@ export function ConnectCard({ width }: { width: number }) {
       {lines.map((parts, i) => (
         <Line key={i} parts={parts.length ? fit(parts, w - 4) : [[" ", t.dim]]} />
       ))}
+    </Modal>
+  )
+}
+
+// Words into lines of at most `width` cells.
+function wrap(text: string, width: number): string[] {
+  const out: string[] = []
+  let line = ""
+  for (const word of text.split(/\s+/)) {
+    if (line && line.length + 1 + word.length > width) out.push(line), (line = "")
+    line = line ? `${line} ${word}` : word
+  }
+  return [...out, line]
+}
+
+// A thin bar: heavy line for what is done (half cells too), the same line faint for what is left.
+function bar(value: number, width: number, color: string, track: string): Part[] {
+  const halves = Math.round(Math.max(0, Math.min(1, value)) * width * 2)
+  const done = "━".repeat(halves >> 1) + (halves & 1 ? "╸" : "")
+  return [[done, color], ["━".repeat(width - done.length), track]]
+}
+
+const NOTES_ROWS = 7
+
+// Keys a card offers, which a click runs too: `enter update · esc later`.
+type Hint = { key: string; desc: string; run: () => void }
+const HINT_SEP = " · "
+const hintsWidth = (hs: Hint[]) => hs.reduce((n, h, i) => n + (i ? HINT_SEP.length : 0) + h.key.length + 1 + h.desc.length, 0)
+
+function Hints({ hints }: { hints: Hint[] }) {
+  const s = useApp()
+  const t = s.theme
+  const [hover, setHover] = useState<number | null>(null)
+  // Which hint is at column x of the line.
+  const at = (e: MouseEvent) => {
+    let x = e.x - e.currentTarget!.x
+    for (const [i, h] of hints.entries()) {
+      const w = h.key.length + 1 + h.desc.length
+      if (x < w) return x >= 0 ? i : null
+      x -= w + HINT_SEP.length
+    }
+    return null
+  }
+  const parts = hints.flatMap((h, i): Part[] => [
+    ...(i ? [[HINT_SEP, t.dim] as Part] : []),
+    [h.key, hover === i ? t.accent : t.fg, BOLD],
+    [` ${h.desc}`, hover === i ? t.fg : t.muted],
+  ])
+  return (
+    <Line
+      parts={parts}
+      onMouseDown={(e) => {
+        const i = at(e)
+        if (i !== null) hints[i]!.run(), s.emit()
+      }}
+      onMouseMove={(e) => setHover(at(e))}
+      onMouseOut={() => setHover(null)}
+    />
+  )
+}
+
+// :update, or the ↑ in the statusline: what the new version brings, then the install as it goes, then restart.
+export function UpdateCard({ width }: { width: number }) {
+  const s = useApp()
+  const t = s.theme
+  const u = s.update
+  const notesRef = useRef<ScrollBoxRenderable>(null)
+  useEffect(() => {
+    s.scrollNotes = (rows) => notesRef.current?.scrollBy(rows)
+    return () => void (s.scrollNotes = () => {})
+  }, [s])
+  if (!u?.card) return null
+  const w = Math.min(width - 4, 64)
+  const inner = w - 4
+  const canInstall = !!updateCommand()
+
+  // Room for the text inside the box's border and padding, and its scrollbar when the notes do not fit.
+  const long = (u.notes ?? []).reduce((n, note) => n + wrap(note, inner - 4).length, 0) > NOTES_ROWS
+  const textWidth = inner - (long ? 5 : 4)
+  const notes: Part[][] =
+    u.notes === undefined
+      ? [[["loading…", t.dim]]]
+      : u.notes.length
+        ? u.notes.flatMap((note) => wrap(note, textWidth).map((l, i): Part[] => [[i ? "  " : "• ", t.accent], [l, i ? t.muted : t.fg]]))
+        : [[["no notes for this version", t.dim]]]
+  const notesRows = Math.min(notes.length, NOTES_ROWS)
+
+  const enter = (desc: string): Hint => ({ key: "enter", desc, run: () => s.confirmUpdate() })
+  const esc = (desc: string): Hint => ({ key: "esc", desc, run: () => s.closeUpdate() })
+  const keys = (...hs: Hint[]) => hs
+  const pct = Math.round(u.progress.value * 100)
+  const [color, status, hint]: [string, Part[], Hint[]] =
+    !canInstall
+      ? [t.dim, [["from a clone of the repo: git pull", t.muted]], keys(esc("close"))]
+      : u.phase === "offer"
+        ? [t.accent, [["ready to install", t.muted]], keys(enter("update"), esc("later"))]
+        : u.phase === "running"
+          ? [t.accent, [[`${u.progress.stage}…`, t.fg]], keys(esc("hide"))]
+          : u.phase === "done"
+            ? [t.add, [["✓ installed", t.add, BOLD]], keys(enter("restart"), esc("later"))]
+            : [t.remove, [["✗ ", t.remove, BOLD], [u.output ?? "failed", t.remove]], keys(enter("retry"), esc("close"))]
+  const shown = u.phase === "offer" ? 0 : pct
+
+  return (
+    <Modal title="update" width={w} height={notesRows + 9}>
+      <Line parts={spread([], [[VERSION, t.dim], ["  →  ", t.muted], [u.latest, t.accent, BOLD]], inner)} />
+      <box height={1} />
+      <box
+        height={notesRows + 2}
+        border
+        borderStyle="rounded"
+        borderColor={t.border}
+        title=" what's new "
+        titleColor={t.muted}
+        paddingLeft={1}
+        paddingRight={1}
+      >
+        <scrollbox ref={notesRef} flexGrow={1} verticalScrollbarOptions={{ ...scrollbar(t), visible: long }}>
+          {notes.map((parts, i) => (
+            <Line key={i} parts={parts} />
+          ))}
+        </scrollbox>
+      </box>
+      <box height={1} />
+      <Line parts={[...bar(shown / 100, inner - 5, color, t.border), [`${shown}%`.padStart(5), shown ? t.fg : t.dim, BOLD]]} />
+      <box flexDirection="row" height={1}>
+        <box flexGrow={1} overflow="hidden">
+          <Line parts={fit(status, inner - hintsWidth(hint) - 2)} />
+        </box>
+        <Hints hints={hint} />
+      </box>
     </Modal>
   )
 }

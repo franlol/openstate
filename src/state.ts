@@ -3,6 +3,7 @@ import { homedir } from "node:os"
 import { resolve } from "node:path"
 import { exportHistory, importHistory } from "./history"
 import { startBridge, type Bridge } from "./bridge"
+import { latestVersion, newer, releaseNotes, runUpdate, updateCommand, VERSION, type Progress } from "./update"
 import { startMock } from "./mock"
 import { DEFAULTS, format, OPTIONS, parseSet, saveSettings, stepValue, type OptionName, type Settings } from "./settings"
 import { findTheme, themes, type Theme } from "./theme"
@@ -51,6 +52,7 @@ export const commands: Command[] = [
   { name: "play", desc: "play / pause actions from the cursor", run: (s) => s.togglePlay() },
   { name: "export", desc: "save history as Redux DevTools JSON", run: (s, arg) => void s.exportTo(arg) },
   { name: "import", desc: "load a Redux DevTools history file", run: (s, arg) => void s.importFrom(arg) },
+  { name: "update", desc: "look for a new version and install it", run: (s) => void s.checkUpdate(true) },
   { name: "help", desc: "show keybindings", run: (s) => (s.help = true) },
   { name: "quit", desc: "exit openstate", run: (s) => s.quit() },
 ]
@@ -92,6 +94,16 @@ export class AppState {
   demo = false
   // The "connect an app" card of the waiting screen.
   connectCard = false
+  // A newer version on npm, and the :update card: offered, installing, installed or failed.
+  update: {
+    latest: string
+    card: boolean
+    phase: "offer" | "running" | "done" | "failed"
+    progress: Progress
+    // The release's notes; undefined while they load.
+    notes?: string[]
+    output?: string
+  } | null = null
   bridge: Bridge | null = null
   // Why the bridge is not listening, e.g. the port is taken.
   listenError: string | null = null
@@ -132,6 +144,10 @@ export class AppState {
   // Seconds shown by the main track, set when it renders; H/L travel half of it.
   trackSpan = 60
   onQuit: () => void = () => {}
+  // Scrolls the update card's notes; set by the card while it shows.
+  scrollNotes: (rows: number) => void = () => {}
+  // Ends this openstate and starts the installed one in the same terminal.
+  onRestart: () => void = () => {}
   // Writes to the clipboard (host and OSC 52); set up by main with the renderer.
   copyText: (text: string) => Promise<boolean> = async () => false
   // Visual mode anchor: the action id where the selection started.
@@ -885,6 +901,55 @@ export class AppState {
   }
   quit() {
     this.onQuit()
+  }
+
+  // On start (unless :set noupdatecheck) a newer version shows in the statusline; :update opens its card.
+  async checkUpdate(manual = false) {
+    if (this.update?.phase === "running" || this.update?.phase === "done") return void (this.update.card = true)
+    if (manual) this.notify("looking for a new version…")
+    const latest = await latestVersion()
+    if (latest && newer(latest, VERSION)) {
+      const u: NonNullable<AppState["update"]> = { latest, card: manual, phase: "offer", progress: { value: 0, stage: "" } }
+      this.update = u
+      void releaseNotes(latest).then((notes) => ((u.notes = notes), this.emit()))
+    } else if (manual) {
+      // No answer covers offline, not published yet, or only someone else's package by that name.
+      this.notify(latest ? `openstate ${VERSION} · up to date` : `openstate ${VERSION} · no newer version found on npm`)
+    }
+    this.emit()
+  }
+
+  installUpdate() {
+    const u = this.update
+    const cmd = updateCommand()
+    if (!u || u.phase === "running") return
+    // From a clone of the repo the card says to git pull; there is nothing to run.
+    if (!cmd) return
+    u.phase = "running"
+    void runUpdate(cmd, (p) => ((u.progress = { ...p }), this.emit())).then(({ ok, output }) => {
+      u.phase = ok ? "done" : "failed"
+      u.output = output.split("\n").filter(Boolean).at(-1)
+      this.emit()
+    })
+  }
+
+  // enter in the update card, or a click on it: install, or restart once installed.
+  confirmUpdate() {
+    if (this.update?.phase === "done") this.restart()
+    else this.installUpdate()
+  }
+
+  // A failed install is not kept: :update offers it again.
+  closeUpdate() {
+    const u = this.update
+    if (!u) return
+    u.card = false
+    if (u.phase === "failed") u.phase = "offer"
+  }
+
+  restart() {
+    this.bridge?.close()
+    this.onRestart()
   }
 
   // Move the time cursor by n actions; landing past the end returns to live.

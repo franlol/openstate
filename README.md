@@ -120,10 +120,18 @@ change is saved at once. From the command line:
 | `flash`  | on / off                              | on          | rows and values light up as actions arrive          |
 | `port`   | 1024–65535                            | 8000        | where openstate listens; tell the client with `OPENSTATE_URL` or `install({ url })` |
 | `theme`  | `openstate` `catppuccin` `tokyonight` `gruvbox` `nord` | `openstate` | colour theme; `:theme` previews them as you move |
+| `updatecheck` | on / off                         | on          | ask npm for a new version on start (see below)      |
 
 Settings live in `~/.config/openstate/config` (or `$XDG_CONFIG_HOME/openstate/config`), one option per line in the same
 syntax as `:set`, each with a comment saying what it does. You can edit it by hand; a line openstate cannot read is
 reported on startup and the rest still apply.
+
+## Update
+
+On start openstate asks npm for its latest version; a newer one shows as `↑ 0.2.0 · :update` in the statusline.
+`:update` (or a click there) shows it, `enter` installs it with the package manager that installed openstate (bun, npm
+or pnpm), and `enter` again restarts into it; connected apps reconnect by themselves. `:set noupdatecheck` stops the
+check on start; `:update` still looks when asked. Running from a clone of the repo, update with `git pull`.
 
 ## Develop
 

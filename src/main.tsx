@@ -38,9 +38,17 @@ state.copyText = async (text) => {
 // q, Ctrl+C, a closed terminal and SIGTERM all destroy the renderer; the WebSocket server would keep the
 // process alive without a screen, so exit once the terminal is restored.
 state.onQuit = () => renderer.destroy()
+// After an update: the same command again, now running the installed version, in this terminal.
+let restart = false
+state.onRestart = () => ((restart = true), renderer.destroy())
 renderer.once("destroy", () => {
-  renderer.closed.finally(() => process.exit(0))
+  renderer.closed.finally(async () => {
+    if (!restart) process.exit(0)
+    const next = Bun.spawn([process.execPath, ...process.argv.slice(1)], { stdio: ["inherit", "inherit", "inherit"] })
+    process.exit(await next.exited)
+  })
 })
+if (state.settings.updatecheck && !state.demo) void state.checkUpdate()
 
 // Every palette command is also an ex command, so `:theme nord` resolves through the keymap.
 keymap.registerLayer({
