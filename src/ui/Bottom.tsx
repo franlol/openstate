@@ -61,7 +61,11 @@ export function StatusLine({ width }: { width: number }) {
   if (s.filter) left.push({ text: ` /${s.filter} `, fg: t.add, bg: c, click: emit(() => (s.filter = "")) })
 
   const right: Seg[] = [
-    { text: " mock data ", fg: t.dim, bg: c },
+    s.demo
+      ? { text: " demo data ", fg: t.dim, bg: c }
+      : s.listenError
+        ? { text: ` ✗ :${s.settings.port} `, fg: t.remove, bg: c, bold: true }
+        : { text: ` ⇄ :${s.settings.port} `, fg: t.dim, bg: c },
     { text: ` ${sel?.type ?? "—"} `, fg: t.muted, bg: b },
     { text: ` ${tl.length ? s.selectedIndex() + 1 : 0}/${tl.length}  ${ruler(s)} `, fg: t.bg, bg: mode.color, bold: true },
   ]

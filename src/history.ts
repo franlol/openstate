@@ -15,6 +15,16 @@ type Lifted = {
   isPaused?: boolean
 }
 
+// Toolkit-style actions carry `payload`; plain Redux ones spread their fields next to `type`.
+export function splitAction(action: Record<string, unknown>): { type: string; payload: unknown } {
+  const { type, ...rest } = action
+  const payload = "payload" in rest ? rest.payload : Object.keys(rest).length ? rest : undefined
+  return { type: String(type), payload }
+}
+
+export const parseStack = (stack: string | undefined) =>
+  stack ? stack.split("\n").map((l) => l.trim()).filter((l) => l && l !== "Error") : []
+
 // The extension saves `{ payload, preloadedState }` with the lifted state stringified inside `payload`.
 export function exportHistory(st: Store): string {
   const actionsById: Record<string, LiftedAction> = {}
@@ -53,14 +63,10 @@ export function importHistory(text: string): History {
   const actions = ids.map((id, i) => {
     const entry = lifted.actionsById[id]
     if (!entry?.action || typeof entry.action.type !== "string") throw new Error(`action ${id} has no type`)
-    const { type, ...rest } = entry.action
-    // Toolkit-style actions carry `payload`; plain Redux ones spread their fields next to `type`.
-    const payload = "payload" in rest ? rest.payload : Object.keys(rest).length ? rest : undefined
     return {
-      type: type as string,
-      payload,
+      ...splitAction(entry.action),
       time: entry.timestamp ?? Date.now(),
-      trace: entry.stack ? entry.stack.split("\n").map((l) => l.trim()).filter((l) => l && l !== "Error") : [],
+      trace: parseStack(entry.stack),
       skipped: skipped.has(id),
       state: states?.[i]?.state,
     }

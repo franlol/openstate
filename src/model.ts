@@ -1,4 +1,9 @@
-export type Lib = "redux" | "zustand" | "jotai"
+// Shown next to the store name: "redux" for stores instrumented like the extension does, otherwise what the app reported.
+export type Lib = string
+
+let lastActionId = 0
+// Action ids are unique across every store, so the cursor and React keys never collide.
+export const newActionId = () => ++lastActionId
 
 export type Action = {
   id: number
@@ -25,6 +30,7 @@ export type History = {
 
 // What openstate can ask a connected store to do. It mirrors Redux DevTools' lifted
 // actions: the app owns the history and recomputes states after each change.
+// A store that cannot do something (zustand has no reducer to replay) throws an Error saying so.
 export interface StoreConn {
   dispatch(action: ActionInput): void
   // Skip or restore an action; later states are recomputed without it.

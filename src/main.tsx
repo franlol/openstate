@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { createClipboard, createCliRenderer, createHostClipboard, createRendererClipboardAdapter } from "@opentui/core"
 import { registerEscapeClearsPendingSequence, registerExCommands, registerLeader } from "@opentui/keymap/addons"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
@@ -25,7 +26,8 @@ if (debugFile) {
 }
 
 const { settings, errors } = await loadSettings()
-const state = new AppState(settings)
+// --demo runs fake apps instead of listening for real ones.
+const state = new AppState(settings, process.argv.includes("--demo"))
 state.configErrors = errors
 // Host clipboard when local, OSC 52 through the terminal otherwise (e.g. over SSH).
 const clipboard = createClipboard({ host: createHostClipboard(), terminal: createRendererClipboardAdapter(renderer) })

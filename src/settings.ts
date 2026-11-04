@@ -9,6 +9,7 @@ export type Settings = {
   time: "clock" | "delta"
   flash: boolean
   theme: string
+  port: number
 }
 export type OptionName = keyof Settings
 
@@ -43,10 +44,18 @@ export const OPTIONS: Option[] = [
     values: () => ["clock", "delta"],
   },
   { name: "flash", desc: "flash what changes", help: "rows and values light up as actions arrive", kind: "bool" },
+  {
+    name: "port",
+    desc: "port apps connect to",
+    help: "openstate/client uses ws://localhost:8000 unless told otherwise",
+    kind: "number",
+    min: 1024,
+    max: 65535,
+  },
   { name: "theme", desc: "colour theme", help: "also :theme, which previews them", kind: "enum", values: () => themes.map((t) => t.id) },
 ]
 
-export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, theme: themes[0]!.id }
+export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, theme: themes[0]!.id, port: 8000 }
 
 export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "openstate", "config")
 
@@ -95,8 +104,10 @@ export function stepValue(o: Option, s: Settings, dir: 1 | -1): Settings[OptionN
   const v = s[o.name]
   if (o.kind === "bool") return !v
   if (o.kind === "number") {
-    const steps = o.steps!
     const n = v as number
+    // Without stops (a port) h/l count one by one.
+    if (!o.steps) return Math.max(o.min!, Math.min(o.max!, n + dir))
+    const steps = o.steps
     const next = dir > 0 ? steps.find((x) => x > n) : [...steps].reverse().find((x) => x < n)
     return next ?? n
   }

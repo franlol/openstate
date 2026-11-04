@@ -2,6 +2,7 @@ import { diff, flatten, getPath, type Action, type Change, type Source, type Sto
 import { homedir } from "node:os"
 import { resolve } from "node:path"
 import { exportHistory, importHistory } from "./history"
+import { startBridge, type Bridge } from "./bridge"
 import { startMock } from "./mock"
 import { DEFAULTS, format, OPTIONS, parseSet, saveSettings, stepValue, type OptionName, type Settings } from "./settings"
 import { findTheme, themes, type Theme } from "./theme"
@@ -85,6 +86,11 @@ export class AppState {
   // The :set card, with the highlighted option.
   settingsCard: { index: number } | null = null
   settings: Settings
+  // Mock apps instead of the bridge (--demo).
+  demo = false
+  bridge: Bridge | null = null
+  // Why the bridge is not listening, e.g. the port is taken.
+  listenError: string | null = null
   // Problems reading the config file, shown instead of the greeting.
   configErrors: string[] = []
   activeKey: string
@@ -132,15 +138,20 @@ export class AppState {
   private version = 0
   private animTimer: ReturnType<typeof setInterval> | null = null
 
-  constructor(settings: Settings = DEFAULTS) {
+  constructor(settings: Settings = DEFAULTS, demo = false) {
     this.settings = { ...settings }
     this.theme = findTheme(this.settings.theme)
-    this.sources = startMock(
-      () => this.onData(),
-      () => this.paused,
-      () => this.settings.maxage,
-    )
-    this.activeKey = this.sources[0]!.stores[0]!.key
+    this.demo = demo
+    // The splash lists the demo apps as they start; with the bridge the waiting screen says it all.
+    if (!demo) this.splashUntil = 0
+    const hooks = [() => this.onData(), () => this.paused, () => this.settings.maxage] as const
+    if (demo) this.sources = startMock(...hooks)
+    else {
+      this.bridge = startBridge({ onChange: hooks[0], isPaused: hooks[1], maxAge: hooks[2] })
+      this.sources = this.bridge.sources
+      this.listenError = this.bridge.listen(this.settings.port)
+    }
+    this.activeKey = this.sources[0]?.stores[0]?.key ?? ""
     for (const st of this.allStores()) this.lastSeen.set(st.key, st.actions.length)
   }
 
@@ -214,6 +225,11 @@ export class AppState {
 
   private onData() {
     const now = Date.now()
+    // The first store to connect (or the next one, once the active app is removed) opens by itself.
+    if (!this.store()) {
+      const first = this.allStores()[0]
+      if (first) this.activate(first.key)
+    }
     for (const st of this.allStores()) {
       const seen = this.lastSeen.get(st.key) ?? 0
       const last = st.actions[st.actions.length - 1]
@@ -283,6 +299,11 @@ export class AppState {
   applySettings(changed: Partial<Settings>) {
     Object.assign(this.settings, changed)
     if (changed.theme) this.theme = findTheme(changed.theme)
+    if (changed.maxage !== undefined) this.bridge?.setMaxAge(changed.maxage)
+    if (changed.port !== undefined && this.bridge) {
+      this.listenError = this.bridge.listen(changed.port)
+      if (this.listenError) return this.notify(`E: ${this.listenError} · :set port=<another>`, true)
+    }
     const names = Object.keys(changed) as OptionName[]
     const note = names.map((n) => format(n, this.settings)).join("  ")
     const hint = changed.maxage !== undefined ? " · older actions drop as new ones arrive" : ""
@@ -335,6 +356,16 @@ export class AppState {
     const a = this.selected()
     return a ? this.store(a.storeKey) : this.store()
   }
+  // Send a command to the app; stores that cannot do it throw, and that becomes the message.
+  private via(st: Store, run: (c: Store["conn"]) => void): boolean {
+    try {
+      run(st.conn)
+      return true
+    } catch (e) {
+      this.notify(`E: ${(e as Error).message}`, true)
+      return false
+    }
+  }
   private committedIndex(st: Store) {
     return st.actions.findIndex((a) => a.id === st.commitId)
   }
@@ -343,15 +374,15 @@ export class AppState {
     const st = this.target()
     if (!a || !st || a.seq === 0) return
     if (st.actions.indexOf(a) <= this.committedIndex(st)) return this.notify("E: committed actions cannot be skipped", true)
-    st.conn.toggle(a.id)
-    this.notify(a.skipped ? `skipped ${a.type}, later states recomputed` : `restored ${a.type}`)
+    // Read before sending: a real app answers later, so the flag has not flipped yet.
+    const was = a.skipped
+    if (this.via(st, (c) => c.toggle(a.id))) this.notify(was ? `restored ${a.type}` : `skipped ${a.type}, later states recomputed`)
   }
   commit() {
     const a = this.selected()
     const st = this.target()
     if (!a || !st) return
-    st.conn.commit(a.id)
-    this.notify(`committed at ${a.type} #${a.seq} · revert returns here`)
+    if (this.via(st, (c) => c.commit(a.id))) this.notify(`committed at ${a.type} #${a.seq} · revert returns here`)
   }
   revert() {
     const st = this.target()
@@ -359,7 +390,7 @@ export class AppState {
     const n = st.actions.length - 1 - Math.max(0, this.committedIndex(st))
     if (!n) return this.notify("nothing to revert")
     this.ask(`revert ${n} action${n > 1 ? "s" : ""} to ${st.commitId === null ? "the initial state" : "the commit"}?`, () => {
-      st.conn.revert()
+      if (!this.via(st, (c) => c.revert())) return
       this.moved.delete(st.key)
       this.goLive()
       this.notify(`reverted ${n} action${n > 1 ? "s" : ""}`)
@@ -369,8 +400,7 @@ export class AppState {
     const st = this.target()
     if (!st) return
     this.ask(`reset ${st.name} to its initial state, dropping all ${st.actions.length - 1} actions?`, () => {
-      st.conn.commit(null)
-      st.conn.revert()
+      if (!this.via(st, (c) => (c.commit(null), c.revert()))) return
       this.moved.delete(st.key)
       this.goLive()
       this.notify(`${st.name} reset`)
@@ -382,8 +412,7 @@ export class AppState {
     const n = st.actions.filter((a) => a.skipped).length
     if (!n) return this.notify("no skipped actions to sweep")
     this.ask(`remove ${n} skipped action${n > 1 ? "s" : ""} for good?`, () => {
-      st.conn.sweep()
-      this.notify(`swept ${n} action${n > 1 ? "s" : ""}`)
+      if (this.via(st, (c) => c.sweep())) this.notify(`swept ${n} action${n > 1 ? "s" : ""}`)
     })
   }
   // Move the selected action past its neighbour in the list (same store, as shown).
@@ -399,7 +428,7 @@ export class AppState {
     if (Math.min(st.actions.indexOf(a), st.actions.indexOf(other)) <= Math.max(0, base))
       return this.notify(base > 0 ? "E: cannot move across the commit" : "E: the initial action cannot move", true), false
     const beforeId = dir < 0 ? other.id : (st.actions[st.actions.indexOf(other) + 1]?.id ?? null)
-    st.conn.reorder(a.id, beforeId)
+    if (!this.via(st, (c) => c.reorder(a.id, beforeId))) return false
     this.movedIds(st.key).add(a.id)
     this.selectAction(a.id)
     return true
@@ -431,7 +460,7 @@ export class AppState {
     if (!a || !h || !st) return this.notify("not a moved action"), false
     const base = this.committedIndex(st)
     if (h.before && st.actions.indexOf(h.before) <= base) return this.notify("E: its place is behind the commit", true), false
-    st.conn.reorder(a.id, h.before?.id ?? null)
+    if (!this.via(st, (c) => c.reorder(a.id, h.before?.id ?? null))) return false
     this.movedIds(st.key).delete(a.id)
     this.selectAction(a.id)
     this.notify(`${a.type} back in place · later states recomputed`)
@@ -466,8 +495,9 @@ export class AppState {
   toggleLock() {
     const st = this.target()
     if (!st) return
-    st.conn.lock(!st.locked)
-    this.notify(st.locked ? `${st.name} locked · the app's own changes are ignored` : `${st.name} unlocked`)
+    const was = st.locked
+    if (this.via(st, (c) => c.lock(!was)))
+      this.notify(was ? `${st.name} unlocked` : `${st.name} locked · the app's own changes are ignored`)
   }
   ask(text: string, run: () => void) {
     this.confirm = { text, run }
@@ -531,7 +561,8 @@ export class AppState {
       d.field = "payload"
       return void (d.error = `invalid JSON: ${(e as Error).message.replace(/^JSON Parse error: /, "")}`)
     }
-    this.store(d.storeKey)?.conn.dispatch({ type: d.type.trim(), payload })
+    const st = this.store(d.storeKey)
+    if (!st || !this.via(st, (c) => c.dispatch({ type: d.type.trim(), payload }))) return
     this.closeDispatch()
     this.goLive()
     this.notify(`⇡ dispatched ${d.type.trim()}`)
@@ -630,7 +661,7 @@ export class AppState {
       this.stopPlay()
       // The app renumbers from zero; nothing here is new, so nothing flashes.
       this.lastSeen.set(st.key, n)
-      st.conn.import(h)
+      if (!this.via(st, (c) => c.import(h))) return
       this.moved.delete(st.key)
       const v = this.view(st.key)
       v.cursor = null
@@ -681,8 +712,9 @@ export class AppState {
       const st = this.store(a.storeKey)
       return a.seq > 0 && !!st && st.actions.indexOf(a) > this.committedIndex(st)
     })
-    for (const a of range) this.store(a.storeKey)?.conn.toggle(a.id)
+    const ok = range.every((a) => this.via(this.store(a.storeKey)!, (c) => c.toggle(a.id)))
     this.endVisual()
+    if (!ok) return
     this.notify(`toggled skip on ${range.length} action${range.length > 1 ? "s" : ""}`)
   }
   visualHide() {
@@ -704,8 +736,13 @@ export class AppState {
   removeSource(id: string) {
     const src = this.sources.find((s) => s.id === id)
     if (!src || src.connected) return this.notify("E: only disconnected apps can be removed", true)
-    this.sources = this.sources.filter((s) => s !== src)
-    if (src.stores.some((s) => s.key === this.activeKey)) this.activate(this.sources[0]!.stores[0]!.key)
+    // In place: the bridge keeps adding to this same list.
+    this.sources.splice(this.sources.indexOf(src), 1)
+    if (src.stores.some((s) => s.key === this.activeKey)) {
+      const next = this.sources[0]?.stores[0]
+      if (next) this.activate(next.key)
+      else this.activeKey = ""
+    }
     this.srcCursor = Math.min(this.srcCursor, this.sourceRows().length - 1)
   }
   quit() {

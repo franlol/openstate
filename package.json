@@ -2,21 +2,38 @@
   "name": "openstate",
   "type": "module",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/react": "^19.3.0",
-    "typescript": "^7.0.2"
+  "bin": {
+    "openstate": "src/main.tsx"
+  },
+  "exports": {
+    "./client": "./client/index.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch src/main.tsx",
+    "start": "bun src/main.tsx",
+    "typecheck": "tsc --noEmit",
+    "demo": "bun src/main.tsx --demo"
   },
   "dependencies": {
     "@opentui/core": "^0.8.2",
     "@opentui/keymap": "^0.8.2",
     "@opentui/react": "^0.8.2",
+    "@redux-devtools/instrument": "^3.0.0",
     "diff": "^9.0.0",
     "react": "^19.3.1"
   },
-  "scripts": {
-    "dev": "bun --watch src/main.tsx",
-    "start": "bun src/main.tsx",
-    "typecheck": "tsc --noEmit"
+  "peerDependencies": {
+    "redux": "^4 || ^5"
+  },
+  "peerDependenciesMeta": {
+    "redux": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.3.0",
+    "redux": "^5.0.1",
+    "typescript": "^7.0.2"
   }
 }

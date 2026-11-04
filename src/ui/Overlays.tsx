@@ -22,8 +22,8 @@ export function Splash() {
       <box height={1} />
       <text>
         <span fg={t.accent}>{SPIN[frame % SPIN.length]} </span>
-        <span fg={t.muted}>waiting for apps on </span>
-        <span fg={t.fg}>ws://localhost:8000</span>
+        <span fg={t.muted}>{s.demo ? "starting demo apps" : "waiting for apps on "}</span>
+        <span fg={t.fg}>{s.demo ? "" : `ws://localhost:${s.settings.port}`}</span>
       </text>
       <box height={1} />
       {found.map((src) => (
@@ -35,6 +35,46 @@ export function Splash() {
           <span fg={t.muted}> connected · {src.stores.map((st) => st.lib).join(", ")}</span>
         </text>
       ))}
+    </box>
+  )
+}
+
+// No app connected yet: how to connect one, in place of the panels.
+export function Waiting() {
+  const s = useApp()
+  const t = s.theme
+  const [frame, setFrame] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setFrame((f) => f + 1), 80)
+    return () => clearInterval(id)
+  }, [])
+  const url = `ws://localhost:${s.settings.port}`
+  const code = (text: string): Part[] => [["  " + text, t.fg]]
+  const lines: Part[][] = [
+    s.listenError
+      ? [["✗ ", t.remove, BOLD], [`not listening: ${s.listenError}`, t.remove], [" · :set port=<another>", t.muted]]
+      : [[SPIN[frame % SPIN.length]! + " ", t.accent], ["waiting for apps on ", t.muted], [url, t.fg, BOLD]],
+    [],
+    [["Make this the first import of your app:", t.muted]],
+    code('import "openstate/client"'),
+    [],
+    [["Redux Toolkit, redux with the devtools compose, zustand's devtools", t.muted]],
+    [["and jotai-devtools then report here without other changes.", t.muted]],
+    [],
+    ...(s.settings.port === 8000
+      ? []
+      : [[["Another port: ", t.muted], [`OPENSTATE_URL=${url}`, t.fg], [" in the app's environment.", t.muted]] as Part[], []]),
+    [["No app at hand? ", t.dim], ["openstate --demo", t.fg], [" runs sample apps.", t.dim]],
+  ]
+  return (
+    <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
+      <ascii-font text="openstate" font="block" color={[t.accent, t.sources[1]!]} backgroundColor={t.bg} />
+      <box height={1} />
+      <box flexDirection="column" width={72}>
+        {lines.map((parts, i) => (
+          <Line key={i} parts={parts.length ? fit(parts, 72) : [[" ", t.dim]]} bg={t.bg} />
+        ))}
+      </box>
     </box>
   )
 }

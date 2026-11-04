@@ -3,18 +3,57 @@
 A terminal UI to inspect and time-travel application state — Redux DevTools in your terminal, for every app you have
 open at once. Built with [OpenTUI](https://opentui.com).
 
-> Prototype: it runs on mock data (three fake apps). The bridge to real apps is not built yet.
-
 ## Run
 
 ```bash
 bun install
+bun run start    # waits for apps on ws://localhost:8000
+bun run demo     # three sample apps instead, no app needed
 bun run dev      # restarts on save
-bun run start
 ```
 
 Press `?` for keybindings and `:` for commands (the list shows what each one does). Debug the keymap with
 `OPENSTATE_DEBUG=debug.log bun run start`.
+
+## Connect an app
+
+Make `openstate/client` the **first import** of the app, before any store library:
+
+```ts
+import "openstate/client"
+```
+
+It stands in for the Redux DevTools browser extension (`window.__REDUX_DEVTOOLS_EXTENSION__`), so these report to
+openstate without other changes:
+
+- Redux Toolkit's `configureStore` (`devTools: { name: "cart" }` names the store)
+- redux with `window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__` or `window.__REDUX_DEVTOOLS_EXTENSION__()`
+- zustand's `devtools` middleware, jotai-devtools, and anything else using the extension's `connect()`
+
+It must come first because Redux Toolkit looks for the extension when it loads. Outside a browser (Bun, Node) the client
+defines `window` as `globalThis` so the libraries find it. The app shows up in the sources panel under its host (browser)
+or script name; it reconnects by itself if openstate starts later or restarts.
+
+```ts
+import { install } from "openstate/client"
+install({ name: "checkout", url: "ws://localhost:8123" }) // or OPENSTATE_URL=ws://localhost:8123 in the environment
+```
+
+### What works with each kind of store
+
+Redux stores keep their own history, like with the extension, so openstate can ask the app to replay it differently.
+zustand and other `connect()` stores only report each new state, so openstate keeps their history and can only send a
+state back.
+
+| | Redux | zustand, jotai, `connect()` |
+|---|---|---|
+| inspect, diff, trace, time-travel the list | ✓ | ✓ |
+| dispatch (`D`) | ✓ | ✓ if the store handles devtools actions (zustand: `dispatchFromDevtools`) |
+| commit (`c`), revert (`R`), reset, sweep | ✓ | ✓ (revert sends the committed state to the app) |
+| import (`:import`) | ✓ | ✓ when the file has states |
+| skip (`s`), reorder (`J`/`K`), lock (`!`) | ✓ | — the reducer is not available; openstate says so |
+
+Pausing (`p`) stops openstate recording; the app keeps running, and nothing it already recorded is lost.
 
 ## Settings
 
@@ -35,6 +74,7 @@ change is saved at once. From the command line:
 | `maxage` | 10–5000                               | 500         | actions kept per store; older ones drop as new ones arrive |
 | `time`   | `clock` \| `delta`                    | `clock`     | time column of the action list: `14:39:15`, or time since the previous action (`+1.20s`) |
 | `flash`  | on / off                              | on          | rows and values light up as actions arrive          |
+| `port`   | 1024–65535                            | 8000        | where openstate listens; tell the client with `OPENSTATE_URL` or `install({ url })` |
 | `theme`  | `openstate` `catppuccin` `tokyonight` `gruvbox` `nord` | `openstate` | colour theme; `:theme` previews them as you move |
 
 Settings live in `~/.config/openstate/config` (or `$XDG_CONFIG_HOME/openstate/config`), one option per line in the same

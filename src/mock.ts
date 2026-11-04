@@ -1,6 +1,6 @@
 // Fake apps that emit actions, standing in for real connections until the bridge exists.
 // Each store has a deterministic reducer, so dispatch, skip and revert behave like a real app.
-import type { Action, ActionInput, History, Lib, Source, Store } from "./model"
+import { newActionId, type Action, type ActionInput, type History, type Lib, type Source, type Store } from "./model"
 
 type Step = ActionInput & { at: string }
 type Gen = (s: any) => Step | null
@@ -155,7 +155,6 @@ const specs: Spec[] = [
   },
 ]
 
-let actionId = 0
 
 const TRACE = ["at dispatch (redux/src/createStore.ts:271:7)", "at HTMLUnknownElement.callCallback (react-dom.js:3945)"]
 
@@ -197,7 +196,7 @@ function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () =
     // Paused recording: the app keeps running, openstate just does not log it.
     if (isPaused() && !fromDevtools) return
     const a: Action = {
-      id: ++actionId,
+      id: newActionId(),
       seq: seq++,
       storeKey: key,
       type: input.type,
@@ -277,7 +276,7 @@ function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () =
         seq = 0
         store.commitId = null
         store.actions = h.actions.map((x) => ({
-          id: ++actionId,
+          id: newActionId(),
           seq: seq++,
           storeKey: key,
           type: x.type,
