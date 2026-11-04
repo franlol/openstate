@@ -6,7 +6,9 @@ Apps connect through `client/` (a stand-in for the Redux DevTools extension) to 
 
 ## Commands
 
-- `bun run dev` / `bun run start` — run the TUI; `bun run demo` with fake apps
+- `bun run dev` / `bun run start` — run the TUI; `bun run demo` with fake apps. `start`, `demo` and the `openstate`
+  command run React's production build (`NODE_ENV=production`, set before Bun starts: it decides how JSX compiles);
+  `dev` keeps the development build, several times slower
 - `bun run typecheck` — must pass before finishing a change
 - `OPENSTATE_DEBUG=debug.log bun run start` — logs keymap warnings/errors and how each key was dispatched
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S NODE_ENV=production bun
 import { createClipboard, createCliRenderer, createHostClipboard, createRendererClipboardAdapter } from "@opentui/core"
 import { registerEscapeClearsPendingSequence, registerExCommands, registerLeader } from "@opentui/keymap/addons"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"

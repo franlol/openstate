@@ -10,9 +10,9 @@
   },
   "scripts": {
     "dev": "bun --watch src/main.tsx",
-    "start": "bun src/main.tsx",
+    "start": "NODE_ENV=production bun src/main.tsx",
     "typecheck": "tsc --noEmit",
-    "demo": "bun src/main.tsx --demo"
+    "demo": "NODE_ENV=production bun src/main.tsx --demo"
   },
   "dependencies": {
     "@opentui/core": "^0.8.2",
