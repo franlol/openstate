@@ -1,17 +1,23 @@
 {
   "name": "openstate",
+  "version": "0.1.0",
   "type": "module",
   "private": true,
   "bin": {
     "openstate": "src/main.tsx"
   },
   "exports": {
-    "./client": "./client/index.ts"
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "bun": "./client/index.ts",
+      "default": "./dist/client/index.js"
+    }
   },
   "scripts": {
     "dev": "bun --watch src/main.tsx",
     "start": "NODE_ENV=production bun src/main.tsx",
     "typecheck": "tsc --noEmit",
+    "build": "bun build client/index.ts --outdir dist/client --packages external --env disable && tsc -p tsconfig.client.json",
     "demo": "NODE_ENV=production bun src/main.tsx --demo"
   },
   "dependencies": {
@@ -37,5 +43,10 @@
     "@types/react": "^19.3.0",
     "redux": "^5.0.1",
     "typescript": "^7.0.2"
-  }
+  },
+  "files": [
+    "src",
+    "client",
+    "dist"
+  ]
 }

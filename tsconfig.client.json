@@ -1,0 +1,12 @@
+// Types for openstate/client's compiled build (`bun run build`); the code itself is bundled by Bun.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist/client",
+    "rootDir": "client"
+  },
+  "include": ["client"]
+}

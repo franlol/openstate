@@ -10,6 +10,9 @@ Apps connect through `client/` (a stand-in for the Redux DevTools extension) to 
   command run React's production build (`NODE_ENV=production`, set before Bun starts: it decides how JSX compiles);
   `dev` keeps the development build, several times slower
 - `bun run typecheck` — must pass before finishing a change
+- `bun run build` — compiles `openstate/client` to `dist/client` (JS + types) for bundlers such as Next, which do not
+  compile TypeScript from `node_modules`; Bun imports `client/index.ts` directly. `--env disable` keeps
+  `process.env.NODE_ENV` for the app's bundler to replace instead of Bun's own value
 - `OPENSTATE_DEBUG=debug.log bun run start` — logs keymap warnings/errors and how each key was dispatched
 
 Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with built-in `WebSocket`).

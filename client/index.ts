@@ -4,6 +4,7 @@
 //
 // Redux Toolkit's configureStore, redux's __REDUX_DEVTOOLS_EXTENSION_COMPOSE__, zustand's `devtools`
 // middleware and jotai-devtools then connect without changes. Configure with install({ url, name }).
+// The import does nothing in production builds and while Next renders on the server; install() still does.
 import { instrument } from "@redux-devtools/instrument"
 import type { StoreEnhancer } from "redux"
 import { toJSON, type AppMessage, type LiftedState, type ServerMessage } from "./protocol"
@@ -23,11 +24,27 @@ type Instance = {
 }
 
 const g = globalThis as any
-const env = typeof process !== "undefined" ? process.env : {}
 const runtime = typeof window !== "undefined" ? "browser" : g.Bun ? "bun" : "node"
 
+// Each variable is read as written, `process.env.NAME`, because that is the text bundlers replace with
+// its value; in a browser bundle without a `process` the read throws and counts as unset.
+function read(get: () => string | undefined): string | undefined {
+  try {
+    return get()
+  } catch {
+    return undefined
+  }
+}
+const env = {
+  // NEXT_PUBLIC_ is how Next lets a variable reach the browser.
+  url: read(() => process.env.OPENSTATE_URL) || read(() => process.env.NEXT_PUBLIC_OPENSTATE_URL),
+  production: read(() => process.env.NODE_ENV) === "production",
+  // Next sets NEXT_RUNTIME on the server. Rendering there, a lent `window` would make code take its browser path.
+  nextServer: typeof window === "undefined" && !!read(() => process.env.NEXT_RUNTIME),
+}
+
 const config = {
-  url: env.OPENSTATE_URL || "ws://localhost:8000",
+  url: env.url || "ws://localhost:8000",
   name: defaultName(),
   maxAge: 500,
 }
@@ -235,4 +252,5 @@ export function install(options: ClientOptions = {}) {
   connect()
 }
 
-install()
+// On import, for development only: a production build would have every visitor's browser try localhost.
+if (!env.production && !env.nextServer) install()

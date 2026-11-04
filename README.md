@@ -36,6 +36,14 @@ dropping its oldest), and how soon it reconnects after openstate restarts
 
 ### Any other app
 
+openstate is not on npm yet. Pack it and install the file in the app (a plain copy, which bundlers such as Next's
+Turbopack accept; a linked folder they refuse, as it lies outside the project):
+
+```bash
+cd openstate && bun run build && bun pm pack     # openstate-0.1.0.tgz
+cd my-app && npm install ../openstate/openstate-0.1.0.tgz
+```
+
 Make `openstate/client` the **first import** of the app, before any store library:
 
 ```ts
@@ -57,6 +65,23 @@ or script name; it reconnects by itself if openstate starts later or restarts.
 import { install } from "openstate/client"
 install({ name: "checkout", url: "ws://localhost:8123" }) // or OPENSTATE_URL=ws://localhost:8123 in the environment
 ```
+
+The import only reports in development: in a production build (`NODE_ENV=production`) it does nothing, so visitors'
+browsers never try to reach localhost. Calling `install()` yourself reports anyway.
+
+### Next.js
+
+Nothing beyond the above. Put the import at the top of the file that creates the store (the `"use client"` store
+provider, or the zustand store module):
+
+```ts
+import "openstate/client"
+import { configureStore } from "@reduxjs/toolkit"
+```
+
+While Next renders on the server the import does nothing; the page reports from the browser once it loads, under its
+host (`localhost:3000`). If openstate listens on another port, set `NEXT_PUBLIC_OPENSTATE_URL=ws://localhost:8123`:
+Next only passes variables named `NEXT_PUBLIC_…` to the browser.
 
 ### What works with each kind of store
 
