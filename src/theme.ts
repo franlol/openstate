@@ -125,6 +125,9 @@ export function findTheme(id: string): Theme {
 // The name's two halves: "open" in the accent, "state" a shade lighter. Header, splash, waiting screen and help.
 export const titleShades = (t: Theme) => ({ open: t.accent, state: mix(t.accent, t.fg, 0.35) })
 
+// How much of the theme's shine a letter of the name takes, with the shine's centre at letter `at`.
+export const shineGlow = (i: number, at: number) => Math.max(0, 1 - Math.abs(i - at) / 2)
+
 export function mix(a: string, b: string, t: number): string {
   const pa = parseInt(a.slice(1), 16)
   const pb = parseInt(b.slice(1), 16)

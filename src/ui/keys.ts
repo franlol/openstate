@@ -148,7 +148,7 @@ const layer = (s: AppState, binds: Bind[]) => ({
 
 // Mode string drives which layers are live: normal-mode keys must not eat typing.
 const modeOf = (s: AppState) =>
-  s.help ? "help" : s.picker ? "picker" : s.settingsCard ? "settings" : s.confirm ? "confirm" : s.mode
+  s.help ? "help" : s.picker ? "picker" : s.settingsCard ? "settings" : s.confirm ? "confirm" : s.connectCard ? "connect" : s.mode
 
 export function useGlobalKeys(s: AppState) {
   const normal = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "normal"), [s])
@@ -169,7 +169,33 @@ export function useGlobalKeys(s: AppState) {
     [s],
   )
 
+  // The waiting screen, before any app: its own keys, above the normal ones (c is commit once there is a store).
+  const waiting = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s) === "normal" && !s.store(), (on) => on), [s])
+  const connect = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "connect"), [s])
+
   useBindings(() => ({ enabled: normal, ...layer(s, globalBinds(s)) }), [normal])
+  useBindings(
+    () => ({
+      enabled: waiting,
+      priority: 10,
+      ...layer(s, [
+        { key: "c", desc: "connect an app", group: "waiting", run: () => (s.connectCard = true) },
+        { key: "d", desc: "demo apps", group: "waiting", run: () => s.startDemo() },
+      ]),
+    }),
+    [waiting],
+  )
+  useBindings(
+    () => ({
+      enabled: connect,
+      ...layer(s, [
+        { key: "escape", desc: "close", group: "connect", run: () => (s.connectCard = false) },
+        { key: "c", desc: "close", group: "connect", run: () => (s.connectCard = false) },
+        { key: "q", desc: "close", group: "connect", run: () => (s.connectCard = false) },
+      ]),
+    }),
+    [connect],
+  )
   useBindings(
     () => ({
       enabled: confirm,

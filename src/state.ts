@@ -90,6 +90,8 @@ export class AppState {
   settings: Settings
   // Mock apps instead of the bridge (--demo).
   demo = false
+  // The "connect an app" card of the waiting screen.
+  connectCard = false
   bridge: Bridge | null = null
   // Why the bridge is not listening, e.g. the port is taken.
   listenError: string | null = null
@@ -735,6 +737,14 @@ export class AppState {
       this.notify(ok ? `yanked ${label} · ${text.length} chars` : "E: clipboard not available", !ok)
       this.emit()
     })
+  }
+
+  // `d` on the waiting screen: the sample apps join while openstate keeps listening, so a real app can still connect.
+  startDemo() {
+    if (this.store()) return
+    this.sources.push(...startMock(() => this.onData(), () => this.paused, () => this.settings.maxage))
+    this.notify(`demo apps running · real apps can still connect on :${this.settings.port}`)
+    this.onData()
   }
 
   // ★ github in the help and the waiting screen. Starring needs GitHub's page, so open the repo there; over SSH the

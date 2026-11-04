@@ -1,23 +1,30 @@
 import type { MouseEvent } from "@opentui/core"
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { homedir } from "node:os"
 import { CONFIG_PATH, DEFAULTS, format, OPTIONS, show } from "../settings"
-import { REPO_URL } from "../state"
-import { themes, titleShades } from "../theme"
+import { REPO_URL, SHINE_MS } from "../state"
+import { mix, shineGlow, themes, titleShades } from "../theme"
 import { BOLD, fit, Line, useApp, type Part } from "./kit"
 import { globalBinds, keyLabel, panelBinds, type Bind } from "./keys"
 
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-// The name in large letters, its halves in the header's two shades.
-function Logo({ font, bg }: { font: "block" | "tiny"; bg: string }) {
-  const c = titleShades(useApp().theme)
+// A font's two colours: the fill, and its shadow (the block font's ╗═ edges) sunk halfway into the background.
+const shaded = (fill: string, bg: string) => [fill, mix(fill, bg, 0.5)]
+
+// The name in large letters, its halves in the header's two shades. Drawn a letter at a time (the font's one-cell
+// gap between letters added back), so a shine centred on letter `at` can run across it.
+function Logo({ font, bg, at = -Infinity }: { font: "block" | "tiny"; bg: string; at?: number }) {
+  const t = useApp().theme
+  const c = titleShades(t)
   return (
     <box flexDirection="row">
-      <ascii-font text="open" font={font} color={c.open} backgroundColor={bg} />
-      {/* The letter gap the font puts inside a word, lost between two. */}
-      <box width={1} backgroundColor={bg} />
-      <ascii-font text="state" font={font} color={c.state} backgroundColor={bg} />
+      {[..."openstate"].map((ch, i) => (
+        <Fragment key={i}>
+          {i > 0 && <box width={1} backgroundColor={bg} />}
+          <ascii-font text={ch} font={font} color={shaded(mix(i < 4 ? c.open : c.state, t.shine, shineGlow(i, at)), bg)} backgroundColor={bg} />
+        </Fragment>
+      ))}
     </box>
   )
 }
@@ -55,6 +62,10 @@ export function Splash() {
 }
 
 // No app connected yet: how to connect one, in place of the panels.
+// Before any app connects: the logo, a signal that searches while openstate listens, and the few keys that help.
+// How to connect lives in the card behind `c`.
+const SHINE_EVERY_MS = 4000
+const RADAR = 5
 export function Waiting() {
   const s = useApp()
   const t = s.theme
@@ -63,40 +74,68 @@ export function Waiting() {
     const id = setInterval(() => setFrame((f) => f + 1), 80)
     return () => clearInterval(id)
   }, [])
-  const url = `ws://localhost:${s.settings.port}`
-  const code = (text: string): Part[] => [["  " + text, t.fg]]
-  const lines: Part[][] = [
-    s.listenError
-      ? [["✗ ", t.remove, BOLD], [`not listening: ${s.listenError}`, t.remove], [" · :set port=<another>", t.muted]]
-      : [[SPIN[frame % SPIN.length]! + " ", t.accent], ["waiting for apps on ", t.muted], [url, t.fg, BOLD]],
-    [],
-    // Apps send to 8000 by default, so another port is the first thing to suspect when nothing shows up.
-    ...(s.settings.port === 8000
-      ? []
-      : ([
-          [["⚠ ", t.warn, BOLD], [`apps send to :8000 by default, not :${s.settings.port}`, t.warn], [" · :set port& to go back", t.muted]],
-          [["  or tell the apps: ", t.muted], [`OPENSTATE_URL=${url}`, t.fg], [" · remote ", t.muted], [`port ${s.settings.port}`, t.fg]],
-          [],
-        ] as Part[][])),
-    [["Apps using Redux DevTools remote ", t.muted], ["(React Native, Node)", t.dim]],
-    [["connect as they are: openstate speaks that protocol on this port.", t.muted]],
-    [],
-    [["Anything else: make this the first import of the app.", t.muted]],
-    code('import "openstate/client"'),
-    [["Redux Toolkit, zustand's devtools and jotai-devtools then report here.", t.muted]],
-    [],
-    [["No app at hand? ", t.dim], ["openstate --demo", t.fg], [" runs sample apps.", t.dim]],
-  ]
+  // The shine of the header title, again every few seconds; the 9 letters plus 2 on each side.
+  const since = (frame * 80) % SHINE_EVERY_MS
+  const at = s.settings.flash ? (since / SHINE_MS) * 13 - 2 : -Infinity
+  // The dot goes back and forth, a cell every other frame, its neighbours half lit.
+  const step = Math.floor(frame / 2) % (2 * (RADAR - 1))
+  const pos = step < RADAR ? step : 2 * (RADAR - 1) - step
+  const radar: Part[] = Array.from({ length: RADAR }, (_, i): Part =>
+    i === pos ? ["●", t.accent, BOLD] : ["·", Math.abs(i - pos) === 1 ? t.muted : t.dim],
+  ).flatMap((p, i) => (i ? [["  ", t.bg] as Part, p] : [p]))
+  const status: Part[] = s.listenError
+    ? [["✗ ", t.remove, BOLD], [`not listening: ${s.listenError}`, t.remove], [" · :set port=<another>", t.muted]]
+    : [...radar, ["   listening on ", t.muted], [`:${s.settings.port}`, t.fg, BOLD]]
+  const key = (k: string, desc: string): Part[] => [[k, t.fg, BOLD], [` ${desc}`, t.muted]]
+  const sep: Part = ["  ·  ", t.dim]
+  const keys: Part[] = [...key("c", "connect an app"), sep, ...key("d", "demo"), sep, ...key("?", "keys"), sep]
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
-      <Logo font="block" bg={t.bg} />
-      <box height={1} />
-      <box flexDirection="column" width={72}>
-        {lines.map((parts, i) => (
-          <Line key={i} parts={parts.length ? fit(parts, 72) : [[" ", t.dim]]} bg={t.bg} />
-        ))}
-      </box>
+      <Logo font="block" bg={t.bg} at={at} />
+      <box height={2} />
+      <Line parts={status} bg={t.bg} />
+      {/* Apps send to 8000 by default, so another port is the first thing to suspect when nothing shows up. */}
+      {s.settings.port !== 8000 && (
+        <Line parts={[["⚠ ", t.warn, BOLD], [`apps send to :8000 by default · :set port& goes back · c says how to point them here`, t.warn]]} bg={t.bg} />
+      )}
+      <box height={2} />
+      <RepoLink label="github" bg={t.bg} before={keys} />
     </box>
+  )
+}
+
+// `c` on the waiting screen: how each kind of app reaches openstate.
+export function ConnectCard({ width }: { width: number }) {
+  const s = useApp()
+  const t = s.theme
+  if (!s.connectCard) return null
+  const port = s.settings.port
+  const url = `ws://localhost:${port}`
+  const head = (text: string): Part[] => [[text, t.fg, BOLD]]
+  const code = (text: string, note = ""): Part[] => [[`  ${text}`, t.add], [note ? `   ${note}` : "", t.dim]]
+  const lines: Part[][] = [
+    head("Redux, zustand or jotai"),
+    code("npm install openstate"),
+    code('import "openstate/client"', "first import of the app"),
+    [],
+    head("Already using @redux-devtools/remote"),
+    [[port === 8000 ? "  Nothing to add: it already sends to port 8000." : `  Nothing to add but port: ${port} in its options.`, t.muted]],
+    ...(port === 8000
+      ? []
+      : ([
+          [],
+          head(`openstate is on port ${port}`),
+          code(`OPENSTATE_URL=${url}`),
+          code(`NEXT_PUBLIC_OPENSTATE_URL=${url}`, "Next.js"),
+        ] as Part[][])),
+  ]
+  const w = Math.min(width - 4, 72)
+  return (
+    <Modal title="connect an app" width={w} height={lines.length + 2}>
+      {lines.map((parts, i) => (
+        <Line key={i} parts={parts.length ? fit(parts, w - 4) : [[" ", t.dim]]} />
+      ))}
+    </Modal>
   )
 }
 

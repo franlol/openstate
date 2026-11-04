@@ -2,7 +2,7 @@ import type { MouseEvent } from "@opentui/core"
 import { useEffect } from "react"
 import { changeCount, clock, type Action } from "../model"
 import { SHINE_MS, type AppState } from "../state"
-import { mix, titleShades } from "../theme"
+import { mix, shineGlow, titleShades } from "../theme"
 import { BOLD, fit, Line, useApp, type Part } from "./kit"
 
 const SEP = " › "
@@ -62,7 +62,7 @@ function title(s: AppState): Part[] {
   const since = s.titleShine === null || !s.settings.flash ? Infinity : Date.now() - s.titleShine
   // The shine's centre, from before the first letter to past the last, and its glow two letters wide.
   const at = (since / SHINE_MS) * (name.length + 4) - 2
-  return [...name].map((ch, i): Part => [ch, mix(i < 4 ? shades.open : shades.state, t.shine, Math.max(0, 1 - Math.abs(i - at) / 2)), BOLD])
+  return [...name].map((ch, i): Part => [ch, mix(i < 4 ? shades.open : shades.state, t.shine, shineGlow(i, at)), BOLD])
 }
 
 const BARS = "▁▂▃▄▅▆▇█"
