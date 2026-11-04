@@ -1,12 +1,15 @@
 import type { MouseEvent } from "@opentui/core"
+import { useEffect } from "react"
 import { changeCount, clock, type Action } from "../model"
-import type { AppState } from "../state"
+import { SHINE_MS, type AppState } from "../state"
+import { mix, titleShades } from "../theme"
 import { BOLD, fit, Line, useApp, type Part } from "./kit"
 
 const SEP = " › "
 
 export function Header({ width }: { width: number }) {
   const s = useApp()
+  useEffect(() => s.shineTitle(), [])
   const t = s.theme
   const store = s.store()
   const src = s.sourceOf(s.activeKey)
@@ -16,11 +19,11 @@ export function Header({ width }: { width: number }) {
   const pinDepth = pinned ? pinned.split(".").length : 0
 
   // Each crumb remembers what clicking it does.
-  const crumbs: { part: Part; click?: () => void }[] = [{ part: [" openstate", t.accent, BOLD] }]
-  if (s.merge) crumbs.push({ part: ["all apps", t.fg] })
+  const crumbs: { parts: Part[]; click?: () => void }[] = [{ parts: [[" ", t.bg], ...title(s)] }]
+  if (s.merge) crumbs.push({ parts: [["all apps", t.fg]] })
   else if (src && store) {
-    crumbs.push({ part: [src.name, t.sources[src.color % t.sources.length]!], click: () => (s.focus = "sources") })
-    crumbs.push({ part: [store.name, t.fg], click: () => ((s.view().treeCursor = 0), (s.focus = "actions")) })
+    crumbs.push({ parts: [[src.name, t.sources[src.color % t.sources.length]!]], click: () => (s.focus = "sources") })
+    crumbs.push({ parts: [[store.name, t.fg]], click: () => ((s.view().treeCursor = 0), (s.focus = "actions")) })
   }
   segs.forEach((seg, i) => {
     const path = segs.slice(0, i + 1).join(".")
@@ -28,7 +31,7 @@ export function Header({ width }: { width: number }) {
     // The pinned part of the path is marked; clicking it unpins.
     const inPin = i < pinDepth
     crumbs.push({
-      part: [i === pinDepth - 1 ? `${seg} ⌖` : seg, inPin ? t.accent : last ? t.fg : t.muted, last || inPin ? BOLD : undefined],
+      parts: [[i === pinDepth - 1 ? `${seg} ⌖` : seg, inPin ? t.accent : last ? t.fg : t.muted, last || inPin ? BOLD : undefined]],
       click: () => {
         if (inPin) s.view().pinned = null
         const idx = s.treeRows().findIndex((r) => r.path === path)
@@ -38,16 +41,28 @@ export function Header({ width }: { width: number }) {
     })
   })
 
-  const left: Part[] = crumbs.flatMap((c, i) => (i ? [[SEP, t.dim] as Part, c.part] : [c.part]))
+  const left: Part[] = crumbs.flatMap((c, i) => (i ? [[SEP, t.dim] as Part, ...c.parts] : c.parts))
   const onDown = (e: MouseEvent) => {
     let x = 0
     for (let i = 0; i < crumbs.length; i++) {
-      const w = crumbs[i]!.part[0].length + (i ? SEP.length : 0)
+      const w = crumbs[i]!.parts.reduce((n, p) => n + p[0].length, 0) + (i ? SEP.length : 0)
       if (e.x < x + w) return (crumbs[i]!.click?.(), s.emit())
       x += w
     }
   }
   return <Line parts={fit(left, width)} bg={t.bg} onMouseDown={onDown} />
+}
+
+// "open" in the accent colour and "state" a shade lighter; a shine runs across it once, left to right, when
+// openstate opens.
+function title(s: AppState): Part[] {
+  const t = s.theme
+  const name = "openstate"
+  const shades = titleShades(t)
+  const since = s.titleShine === null || !s.settings.flash ? Infinity : Date.now() - s.titleShine
+  // The shine's centre, from before the first letter to past the last, and its glow two letters wide.
+  const at = (since / SHINE_MS) * (name.length + 4) - 2
+  return [...name].map((ch, i): Part => [ch, mix(i < 4 ? shades.open : shades.state, t.shine, Math.max(0, 1 - Math.abs(i - at) / 2)), BOLD])
 }
 
 const BARS = "▁▂▃▄▅▆▇█"

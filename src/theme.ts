@@ -14,6 +14,8 @@ export type Theme = {
   remove: string
   warn: string
   flash: string
+  // The light that runs across the header title once at start; picked to stand out on the theme's background.
+  shine: string
   sources: string[]
 }
 
@@ -34,6 +36,7 @@ export const themes: Theme[] = [
     remove: "#ff6b81",
     warn: "#ffc857",
     flash: "#2e2a5c",
+    shine: "#e4e0ff",
     sources: ["#7c6cff", "#3fd6c8", "#ff9f5a", "#ff6bb5", "#9ad64f"],
   },
   {
@@ -52,6 +55,7 @@ export const themes: Theme[] = [
     remove: "#f38ba8",
     warn: "#f9e2af",
     flash: "#45385c",
+    shine: "#f5e0dc",
     sources: ["#cba6f7", "#94e2d5", "#fab387", "#f5c2e7", "#a6e3a1"],
   },
   {
@@ -70,6 +74,7 @@ export const themes: Theme[] = [
     remove: "#f7768e",
     warn: "#e0af68",
     flash: "#2f3f6e",
+    shine: "#c0caf5",
     sources: ["#7aa2f7", "#7dcfff", "#ff9e64", "#bb9af7", "#9ece6a"],
   },
   {
@@ -88,6 +93,7 @@ export const themes: Theme[] = [
     remove: "#fb4934",
     warn: "#fe8019",
     flash: "#5a4a1c",
+    shine: "#fbf1c7",
     sources: ["#fabd2f", "#8ec07c", "#fe8019", "#d3869b", "#b8bb26"],
   },
   {
@@ -106,6 +112,7 @@ export const themes: Theme[] = [
     remove: "#bf616a",
     warn: "#ebcb8b",
     flash: "#3e5a66",
+    shine: "#eceff4",
     sources: ["#88c0d0", "#8fbcbb", "#d08770", "#b48ead", "#a3be8c"],
   },
 ]
@@ -115,6 +122,9 @@ export function findTheme(id: string): Theme {
 }
 
 // Linear blend between two #rrggbb colors, t in [0, 1].
+// The name's two halves: "open" in the accent, "state" a shade lighter. Header, splash, waiting screen and help.
+export const titleShades = (t: Theme) => ({ open: t.accent, state: mix(t.accent, t.fg, 0.35) })
+
 export function mix(a: string, b: string, t: number): string {
   const pa = parseInt(a.slice(1), 16)
   const pb = parseInt(b.slice(1), 16)

@@ -56,6 +56,7 @@ export const commands: Command[] = [
 ]
 
 const FLASH_MS = 900
+export const SHINE_MS = 700
 export const SPEEDS = [0.5, 1, 2, 4, 8]
 
 export type Draft = {
@@ -103,6 +104,8 @@ export class AppState {
   // Flash timestamps for changed tree paths and freshly arrived action ids.
   flashPaths = new Map<string, number>()
   flashActions = new Map<number, number>()
+  // When the shine across the header title started: once, when the header first shows.
+  titleShine: number | null = null
   splashUntil = Date.now() + 1800
   // Vim-style startup message once the splash is gone.
   greeted = false
@@ -293,12 +296,19 @@ export class AppState {
       const now = Date.now()
       for (const [k, t] of this.flashPaths) if (now - t > FLASH_MS) this.flashPaths.delete(k)
       for (const [k, t] of this.flashActions) if (now - t > FLASH_MS) this.flashActions.delete(k)
-      if (!this.flashPaths.size && !this.flashActions.size) {
+      const shining = this.titleShine !== null && now - this.titleShine < SHINE_MS
+      if (!this.flashPaths.size && !this.flashActions.size && !shining) {
         clearInterval(this.animTimer!)
         this.animTimer = null
       }
       this.emit()
     }, 1000 / 15)
+  }
+
+  shineTitle() {
+    if (this.titleShine !== null) return
+    this.titleShine = Date.now()
+    this.animate()
   }
 
   flashLevel(t: number | undefined): number {

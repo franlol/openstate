@@ -1,11 +1,24 @@
 import { useEffect, useState } from "react"
 import { homedir } from "node:os"
 import { CONFIG_PATH, DEFAULTS, format, OPTIONS, show } from "../settings"
-import { themes } from "../theme"
+import { themes, titleShades } from "../theme"
 import { BOLD, fit, Line, useApp, type Part } from "./kit"
 import { globalBinds, keyLabel, panelBinds, type Bind } from "./keys"
 
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+// The name in large letters, its halves in the header's two shades.
+function Logo({ font, bg }: { font: "block" | "tiny"; bg: string }) {
+  const c = titleShades(useApp().theme)
+  return (
+    <box flexDirection="row">
+      <ascii-font text="open" font={font} color={c.open} backgroundColor={bg} />
+      {/* The letter gap the font puts inside a word, lost between two. */}
+      <box width={1} backgroundColor={bg} />
+      <ascii-font text="state" font={font} color={c.state} backgroundColor={bg} />
+    </box>
+  )
+}
 
 export function Splash() {
   const s = useApp()
@@ -18,7 +31,7 @@ export function Splash() {
   const found = s.sources.filter((x) => x.stores.some((st) => st.actions.length > 1))
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
-      <ascii-font text="openstate" font="block" color={[t.accent, t.sources[1]!]} backgroundColor={t.bg} />
+      <Logo font="block" bg={t.bg} />
       <box height={1} />
       <text>
         <span fg={t.accent}>{SPIN[frame % SPIN.length]} </span>
@@ -74,7 +87,7 @@ export function Waiting() {
   ]
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
-      <ascii-font text="openstate" font="block" color={[t.accent, t.sources[1]!]} backgroundColor={t.bg} />
+      <Logo font="block" bg={t.bg} />
       <box height={1} />
       <box flexDirection="column" width={72}>
         {lines.map((parts, i) => (
@@ -229,7 +242,7 @@ export function Help({ width, height }: { width: number; height: number }) {
   const logo = height - 2 >= rows + 7
   return (
     <Modal title="keys" width={w} height={Math.min(height - 2, rows + (logo ? 7 : 4))}>
-      {logo && <ascii-font text="openstate" font="tiny" color={[t.accent, t.sources[1]!]} backgroundColor={t.panel} />}
+      {logo && <Logo font="tiny" bg={t.panel} />}
       <box flexDirection="row" flexGrow={1} overflow="hidden">
         {cols.map((col, i) => (
           <box key={i} width={colW} flexDirection="column">
