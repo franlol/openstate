@@ -65,7 +65,7 @@ export function StatusLine({ width }: { width: number }) {
       ? { text: " demo data ", fg: t.dim, bg: c }
       : s.listenError
         ? { text: ` ✗ :${s.settings.port} `, fg: t.remove, bg: c, bold: true }
-        : { text: ` ⇄ :${s.settings.port} `, fg: t.dim, bg: c },
+        : { text: ` ⇄ :${s.settings.port} `, fg: s.settings.port === 8000 ? t.dim : t.warn, bg: c },
     { text: ` ${sel?.type ?? "—"} `, fg: t.muted, bg: b },
     { text: ` ${tl.length ? s.selectedIndex() + 1 : 0}/${tl.length}  ${ruler(s)} `, fg: t.bg, bg: mode.color, bold: true },
   ]

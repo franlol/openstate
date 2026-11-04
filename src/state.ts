@@ -317,6 +317,14 @@ export class AppState {
     const card = this.settingsCard
     const o = card && OPTIONS[card.index]
     if (!o) return
+    if (o.typed) {
+      // Hand over to the command line, ready for the value.
+      this.settingsCard = null
+      this.mode = "command"
+      this.input = `set ${o.name}=`
+      this.cmdIndex = 0
+      return
+    }
     this.applySettings({ [o.name]: stepValue(o, this.settings, dir) })
   }
 

@@ -24,6 +24,8 @@ type Option = {
   steps?: number[]
   min?: number
   max?: number
+  // Typed, never stepped: walking a port one by one would rebind the server at every key.
+  typed?: boolean
 }
 
 export const OPTIONS: Option[] = [
@@ -47,10 +49,11 @@ export const OPTIONS: Option[] = [
   {
     name: "port",
     desc: "port apps connect to",
-    help: "openstate/client uses ws://localhost:8000 unless told otherwise",
+    help: "apps send to 8000 unless told otherwise",
     kind: "number",
     min: 1024,
     max: 65535,
+    typed: true,
   },
   { name: "theme", desc: "colour theme", help: "also :theme, which previews them", kind: "enum", values: () => themes.map((t) => t.id) },
 ]
@@ -105,9 +108,7 @@ export function stepValue(o: Option, s: Settings, dir: 1 | -1): Settings[OptionN
   if (o.kind === "bool") return !v
   if (o.kind === "number") {
     const n = v as number
-    // Without stops (a port) h/l count one by one.
-    if (!o.steps) return Math.max(o.min!, Math.min(o.max!, n + dir))
-    const steps = o.steps
+    const steps = o.steps ?? []
     const next = dir > 0 ? steps.find((x) => x > n) : [...steps].reverse().find((x) => x < n)
     return next ?? n
   }

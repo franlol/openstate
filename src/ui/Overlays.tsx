@@ -55,6 +55,14 @@ export function Waiting() {
       ? [["✗ ", t.remove, BOLD], [`not listening: ${s.listenError}`, t.remove], [" · :set port=<another>", t.muted]]
       : [[SPIN[frame % SPIN.length]! + " ", t.accent], ["waiting for apps on ", t.muted], [url, t.fg, BOLD]],
     [],
+    // Apps send to 8000 by default, so another port is the first thing to suspect when nothing shows up.
+    ...(s.settings.port === 8000
+      ? []
+      : ([
+          [["⚠ ", t.warn, BOLD], [`apps send to :8000 by default, not :${s.settings.port}`, t.warn], [" · :set port& to go back", t.muted]],
+          [["  or tell the apps: ", t.muted], [`OPENSTATE_URL=${url}`, t.fg], [" · remote ", t.muted], [`port ${s.settings.port}`, t.fg]],
+          [],
+        ] as Part[][])),
     [["Apps using Redux DevTools remote ", t.muted], ["(React Native, Node)", t.dim]],
     [["connect as they are: openstate speaks that protocol on this port.", t.muted]],
     [],
@@ -62,9 +70,6 @@ export function Waiting() {
     code('import "openstate/client"'),
     [["Redux Toolkit, zustand's devtools and jotai-devtools then report here.", t.muted]],
     [],
-    ...(s.settings.port === 8000
-      ? []
-      : [[["openstate/client on this port: ", t.muted], [`OPENSTATE_URL=${url}`, t.fg]] as Part[], []]),
     [["No app at hand? ", t.dim], ["openstate --demo", t.fg], [" runs sample apps.", t.dim]],
   ]
   return (
@@ -156,7 +161,7 @@ export function SettingsCard({ width }: { width: number }) {
         const on = i === card.index
         const v = show(o.name, s.settings)
         const changed = s.settings[o.name] !== DEFAULTS[o.name]
-        const value = on ? `‹ ${v} ›` : `  ${v}  `
+        const value = on && !o.typed ? `‹ ${v} ›` : `  ${v}  `
         return (
           <Line
             key={o.name}
