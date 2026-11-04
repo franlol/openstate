@@ -286,7 +286,7 @@ export class AppState {
     this.animate()
   }
 
-  // Re-render while flashes fade, then stop the timer.
+  // Re-render while flashes fade, then stop the timer. 15 frames a second: each one repaints everything.
   private animate() {
     if (this.animTimer) return
     this.animTimer = setInterval(() => {
@@ -298,7 +298,7 @@ export class AppState {
         this.animTimer = null
       }
       this.emit()
-    }, 50)
+    }, 1000 / 15)
   }
 
   flashLevel(t: number | undefined): number {
