@@ -84,8 +84,19 @@ const changeCache = new WeakMap<Action, { prev: unknown; state: unknown; n: numb
 export function changeCount(a: Action): number {
   const c = changeCache.get(a)
   if (c && c.prev === a.prev && c.state === a.state) return c.n
-  const n = diff(a.prev, a.state).length
+  const n = countChanges(a.prev, a.state)
   changeCache.set(a, { prev: a.prev, state: a.state, n })
+  return n
+}
+
+// What diff(a, b).length would be, without building paths: states from remote apps share no objects, so every
+// count walks the whole state.
+function countChanges(a: unknown, b: unknown): number {
+  if (Object.is(a, b)) return 0
+  if (!isObj(a) || !isObj(b) || Array.isArray(a) !== Array.isArray(b)) return 1
+  let n = 0
+  for (const k in a) n += countChanges(a[k], b[k])
+  for (const k in b) if (!(k in a) && b[k] !== undefined) n++
   return n
 }
 

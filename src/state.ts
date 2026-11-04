@@ -211,9 +211,15 @@ export class AppState {
     const sel = this.selected()
     return sel ? tl.indexOf(sel) : -1
   }
+  // Asked several times per render; cached while the selected action's states stay the same objects.
+  private changesOf: { prev: unknown; state: unknown; out: Change[] } | null = null
   changes(): Change[] {
     const a = this.selected()
-    return a ? diff(a.prev, a.state) : []
+    if (!a) return []
+    const c = this.changesOf
+    if (c && c.prev === a.prev && c.state === a.state) return c.out
+    this.changesOf = { prev: a.prev, state: a.state, out: diff(a.prev, a.state) }
+    return this.changesOf.out
   }
 
   sourceRows(): SourceRow[] {
