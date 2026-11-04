@@ -15,6 +15,7 @@ function modeOf(s: AppState): { name: string; color: string } {
   if (s.mode === "command") return { name: "COMMAND", color: t.warn }
   if (s.mode === "filter") return { name: "FILTER", color: t.add }
   if (s.mode === "insert") return { name: "INSERT", color: t.add }
+  if (s.mode === "visual") return { name: "VISUAL", color: t.sources[2]! }
   return { name: "NORMAL", color: t.accent }
 }
 
@@ -87,6 +88,15 @@ export function CmdLine({ width }: { width: number }) {
   const pending = usePendingSequence()
   if (s.mode === "command" || s.mode === "filter") return <Prompt width={width} />
   if (s.mode === "insert") return <Line parts={fit([["-- INSERT --", t.fg, BOLD]], width)} bg={t.bg} />
+  if (s.mode === "visual") {
+    const n = s.visualRange().length
+    return (
+      <Line
+        parts={fit([["-- VISUAL -- ", t.fg, BOLD], [`${n} action${n > 1 ? "s" : ""} · s skip · x hide · y yank · esc`, t.muted]], width)}
+        bg={t.bg}
+      />
+    )
+  }
 
   if (s.confirm)
     return <Line parts={fit([[`${s.confirm.text} `, t.warn, BOLD], ["[y/N]", t.fg]], width)} bg={t.bg} />

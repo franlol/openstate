@@ -1,7 +1,7 @@
-import type { ScrollBoxRenderable, TabSelectRenderable } from "@opentui/core"
+import type { LineColorConfig, LineNumberRenderable, ScrollBoxRenderable, TabSelectRenderable } from "@opentui/core"
 import { createTwoFilesPatch } from "diff"
 import { useEffect, useRef } from "react"
-import { preview, type TreeRow } from "../model"
+import { jsonLines, preview, type TreeRow } from "../model"
 import { TABS } from "../state"
 import { mix } from "../theme"
 import { BOLD, fit, Line, scrollbar, spread, useApp, useSyntax, type Part } from "./kit"
@@ -56,6 +56,8 @@ export function Inspector({ width }: { width: number }) {
         <CodeView content={JSON.stringify({ type: a.type, payload: a.payload ?? null }, null, 2)} />
       ) : s.tab === "diff" ? (
         <DiffView />
+      ) : s.tab === "raw" ? (
+        <RawView />
       ) : (
         <TraceView width={width - 2} />
       )}
@@ -133,6 +135,50 @@ function CodeView({ content }: { content: string }) {
   return (
     <scrollbox flexGrow={1} paddingLeft={1} scrollbarOptions={scrollbar(s.theme)}>
       <code content={content} filetype="javascript" syntaxStyle={syntax} fg={s.theme.fg} />
+    </scrollbox>
+  )
+}
+
+// The state as JSON, with the lines this action changed tinted and flashing like the tree.
+function RawView() {
+  const s = useApp()
+  const t = s.theme
+  const a = s.selected()!
+  const syntax = useSyntax(t)
+  const gutter = useRef<LineNumberRenderable>(null)
+  const scroll = useRef<ScrollBoxRenderable>(null)
+  const lines = jsonLines(a.state)
+  const changes = s.changes()
+  // A line is changed when it is a changed leaf or sits inside a value that was added or replaced whole.
+  const changeOf = (path: string) =>
+    changes.find((c) => path === c.path || path.startsWith(c.path + ".") || (c.path === "" && path !== ""))?.path
+  const colors = new Map<number, LineColorConfig>()
+  let first = -1
+  lines.forEach((l, i) => {
+    const c = changeOf(l.path)
+    if (c === undefined) return
+    if (first < 0) first = i
+    const flash = s.flashLevel(s.flashPaths.get(c))
+    let bg = mix(t.panel, t.add, 0.08)
+    if (flash) bg = mix(bg, t.flash, flash)
+    colors.set(i, { content: bg, gutter: mix(t.panel, t.add, 0.2) })
+  })
+  useEffect(() => {
+    gutter.current?.setLineColors(colors)
+  })
+  // Bring the first change into view when another action is selected.
+  useEffect(() => {
+    const sb = scroll.current
+    if (!sb || first < 0) return
+    const h = sb.viewport.height
+    if (first < sb.scrollTop || first >= sb.scrollTop + h) sb.scrollTop = Math.max(0, first - 2)
+  }, [a.id])
+
+  return (
+    <scrollbox ref={scroll} flexGrow={1} scrollbarOptions={scrollbar(t)}>
+      <line-number ref={gutter} fg={t.dim} bg={t.panel} minWidth={3} paddingRight={1}>
+        <code content={lines.map((l) => l.text).join("\n")} filetype="javascript" syntaxStyle={syntax} fg={t.fg} />
+      </line-number>
     </scrollbox>
   )
 }

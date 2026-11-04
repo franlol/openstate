@@ -1,4 +1,4 @@
-import { createCliRenderer } from "@opentui/core"
+import { createClipboard, createCliRenderer, createHostClipboard, createRendererClipboardAdapter } from "@opentui/core"
 import { registerEscapeClearsPendingSequence, registerExCommands, registerLeader } from "@opentui/keymap/addons"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { KeymapProvider } from "@opentui/keymap/react"
@@ -24,6 +24,12 @@ if (debugFile) {
 }
 
 const state = new AppState()
+// Host clipboard when local, OSC 52 through the terminal otherwise (e.g. over SSH).
+const clipboard = createClipboard({ host: createHostClipboard(), terminal: createRendererClipboardAdapter(renderer) })
+state.copyText = async (text) => {
+  const r = await clipboard.writeText(text, { destination: "best-available" })
+  return [r.host, r.terminal].some((x) => x?.status === "written")
+}
 state.onQuit = () => {
   renderer.destroy()
   process.exit(0)

@@ -1,11 +1,11 @@
-import { diff, flatten, type Action, type Change, type Source, type Store, type TreeRow } from "./model"
+import { diff, flatten, getPath, type Action, type Change, type Source, type Store, type TreeRow } from "./model"
 import { startMock } from "./mock"
 import { findTheme, themes, type Theme } from "./theme"
 
 export type Focus = "sources" | "actions" | "inspector"
-export type Tab = "state" | "action" | "diff" | "trace"
-export type Mode = "normal" | "filter" | "command" | "insert"
-export const TABS: Tab[] = ["state", "action", "diff", "trace"]
+export type Tab = "state" | "action" | "diff" | "trace" | "raw"
+export type Mode = "normal" | "filter" | "command" | "insert" | "visual"
+export const TABS: Tab[] = ["state", "action", "diff", "trace", "raw"]
 export const FOCI: Focus[] = ["sources", "actions", "inspector"]
 export const MERGED = "*"
 
@@ -17,6 +17,10 @@ type View = {
   treeCursor: number
   // Start time of the track's visible window; it only moves to keep the cursor in view.
   trackFrom: number | null
+  // State tree shows only this subtree.
+  pinned: string | null
+  // Action types hidden from the list (a persistent denylist, unlike the / filter).
+  hidden: Set<string>
 }
 
 export type SourceRow = { kind: "source"; source: Source } | { kind: "store"; source: Source; store: Store }
@@ -35,6 +39,8 @@ export const commands: Command[] = [
   { name: "sweep", desc: "remove skipped actions", run: (s) => s.sweep() },
   { name: "reset", desc: "back to the initial state", run: (s) => s.reset() },
   { name: "lock", desc: "lock / unlock the app's own changes", run: (s) => s.toggleLock() },
+  { name: "unhide", desc: "show hidden action types again", run: (s) => s.unhideAll() },
+  { name: "pin", desc: "pin / unpin the subtree under the cursor", run: (s) => s.togglePin() },
   { name: "play", desc: "play / pause actions from the cursor", run: (s) => s.togglePlay() },
   { name: "help", desc: "show keybindings", run: (s) => (s.help = true) },
   { name: "quit", desc: "exit openstate", run: (s) => s.quit() },
@@ -98,6 +104,10 @@ export class AppState {
   // Seconds shown by the main track, set when it renders; H/L travel half of it.
   trackSpan = 60
   onQuit: () => void = () => {}
+  // Writes to the clipboard (host and OSC 52); set up by main with the renderer.
+  copyText: (text: string) => Promise<boolean> = async () => false
+  // Visual mode anchor: the action id where the selection started.
+  visual: number | null = null
 
   private views = new Map<string, View>()
   private lastSeen = new Map<string, number>()
@@ -135,7 +145,7 @@ export class AppState {
   view(key = this.viewKey()): View {
     let v = this.views.get(key)
     if (!v) {
-      v = { cursor: null, expanded: new Set(), collapsed: new Set(), treeCursor: 0, trackFrom: null }
+      v = { cursor: null, expanded: new Set(), collapsed: new Set(), treeCursor: 0, trackFrom: null, pinned: null, hidden: new Set() }
       this.views.set(key, v)
     }
     return v
@@ -150,9 +160,10 @@ export class AppState {
           .flatMap((s) => s.actions)
           .sort((a, b) => a.time - b.time || a.id - b.id)
       : (this.store()?.actions ?? [])
-    if (!this.filter) return all
+    const hidden = this.view().hidden
     const f = this.filter.toLowerCase()
-    return all.filter((a) => a.type.toLowerCase().includes(f))
+    if (!f && !hidden.size) return all
+    return all.filter((a) => !hidden.has(a.type) && a.type.toLowerCase().includes(f))
   }
 
   selected(): Action | undefined {
@@ -431,6 +442,84 @@ export class AppState {
     }, gap)
   }
 
+  // --- yank -------------------------------------------------------------------
+  yank(what: "action" | "state" | "path" | "value") {
+    const a = this.selected()
+    if (!a) return
+    const row = this.tab === "state" ? this.treeRows()[this.view().treeCursor] : undefined
+    let text: string
+    let label: string
+    if (what === "action") (text = json({ type: a.type, payload: a.payload })), (label = a.type)
+    else if (what === "state") (text = json(a.state)), (label = "state")
+    else if (!row) return this.notify("E: put the tree cursor on a node first (inspector, state tab)", true)
+    else if (what === "path") (text = row.path), (label = row.path)
+    else (text = json(row.value)), (label = `value of ${row.path}`)
+    this.put(text, label)
+  }
+  private put(text: string, label: string) {
+    void this.copyText(text).then((ok) => {
+      this.notify(ok ? `yanked ${label} · ${text.length} chars` : "E: clipboard not available", !ok)
+      this.emit()
+    })
+  }
+
+  // --- hide -------------------------------------------------------------------
+  hideType(type?: string) {
+    const t = type ?? this.selected()?.type
+    if (!t) return
+    this.view().hidden.add(t)
+    this.notify(`hid ${t} · :unhide to show again`)
+  }
+  unhideAll() {
+    const n = this.view().hidden.size
+    this.view().hidden.clear()
+    this.notify(n ? `showing ${n} hidden type${n > 1 ? "s" : ""} again` : "nothing hidden")
+  }
+
+  // --- visual -----------------------------------------------------------------
+  startVisual() {
+    const a = this.selected()
+    if (!a) return
+    this.stopPlay()
+    if (this.view().cursor === null) this.view().cursor = a.id
+    this.visual = a.id
+    this.mode = "visual"
+    this.focus = "actions"
+  }
+  endVisual() {
+    this.visual = null
+    this.mode = "normal"
+  }
+  // Actions between the anchor and the cursor, inclusive.
+  visualRange(): Action[] {
+    const tl = this.timeline()
+    const i = tl.findIndex((a) => a.id === this.visual)
+    const j = this.selectedIndex()
+    if (i < 0 || j < 0) return []
+    return tl.slice(Math.min(i, j), Math.max(i, j) + 1)
+  }
+  visualSkip() {
+    // Init and committed actions cannot be skipped.
+    const range = this.visualRange().filter((a) => {
+      const st = this.store(a.storeKey)
+      return a.seq > 0 && !!st && st.actions.indexOf(a) > this.committedIndex(st)
+    })
+    for (const a of range) this.store(a.storeKey)?.conn.toggle(a.id)
+    this.endVisual()
+    this.notify(`toggled skip on ${range.length} action${range.length > 1 ? "s" : ""}`)
+  }
+  visualHide() {
+    const types = new Set(this.visualRange().map((a) => a.type))
+    for (const t of types) this.view().hidden.add(t)
+    this.endVisual()
+    this.notify(`hid ${types.size} type${types.size > 1 ? "s" : ""} · :unhide to show again`)
+  }
+  visualYank() {
+    const range = this.visualRange()
+    this.endVisual()
+    this.put(json(range.map((a) => ({ type: a.type, payload: a.payload }))), `${range.length} actions`)
+  }
+
   goLive() {
     this.stopPlay()
     this.view().cursor = null
@@ -525,7 +614,24 @@ export class AppState {
   }
   treeRows(): TreeRow[] {
     const a = this.selected()
-    return a ? flatten(a.state, this.effectiveExpanded()) : []
+    if (!a) return []
+    const pin = this.view().pinned
+    return pin ? flatten(getPath(a.state, pin), this.effectiveExpanded(), pin) : flatten(a.state, this.effectiveExpanded())
+  }
+  // Pin the subtree under the tree cursor, or unpin when something is pinned already.
+  togglePin() {
+    const v = this.view()
+    if (v.pinned) {
+      this.notify(`unpinned ${v.pinned}`)
+      v.pinned = null
+    } else {
+      const r = this.treeRows()[v.treeCursor]
+      if (!r?.branch) return this.notify("E: pin an object or array, not a value", true)
+      v.pinned = r.path
+      this.setOpen(r.path, true)
+      this.notify(`pinned ${r.path} · P again to unpin`)
+    }
+    v.treeCursor = 0
   }
   setOpen(path: string, open: boolean) {
     const v = this.view()
@@ -551,6 +657,8 @@ export class AppState {
     return commands.filter((c) => fuzzy(s, c.name)).sort((a, b) => rank(a) - rank(b))
   }
 }
+
+const json = (v: unknown) => JSON.stringify(v ?? null, null, 2)
 
 export function fuzzy(q: string, s: string): boolean {
   let i = 0

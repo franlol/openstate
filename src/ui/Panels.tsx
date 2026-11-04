@@ -154,9 +154,12 @@ export function Actions({ width }: { width: number }) {
   const from = Math.max(0, Math.min(idx - WINDOW / 2, tl.length - WINDOW))
   const visible = tl.slice(from, from + WINDOW)
   const locked = s.target()?.locked ? " · ◆ locked" : ""
+  const hidden = s.view().hidden.size
+  // Visual mode selection, inclusive of anchor and cursor.
+  const range = new Set(s.mode === "visual" ? s.visualRange().map((a) => a.id) : [])
   const title = (s.filter ? `actions /${s.filter}` : s.merge ? "actions · all apps" : "actions") + locked
   return (
-    <Panel id="actions" title={title} bottomTitle={` ${tl.length} `} width={width}>
+    <Panel id="actions" title={title} bottomTitle={(hidden ? ` ${hidden} hidden ·` : "") + ` ${tl.length} `} width={width}>
       <scrollbox ref={ref} flexGrow={1} stickyScroll stickyStart="bottom" scrollbarOptions={scrollbar(t)}>
         {visible.map((a, k) => {
           const i = from + k
@@ -165,7 +168,7 @@ export function Actions({ width }: { width: number }) {
           const changes = changeCount(a)
           const src = s.merge ? s.sourceOf(a.storeKey) : undefined
           const flash = s.flashLevel(s.flashActions.get(a.id))
-          const base = isSel ? t.selBg : t.panel
+          const base = range.has(a.id) ? mix(t.selBg, t.sources[2]!, 0.3) : isSel ? t.selBg : t.panel
           const bg = flash ? mix(base, t.flash, flash) : base
           const typeFg = a.skipped || future ? t.dim : isSel ? t.fg : t.fg
           const attrs = a.skipped ? STRIKE : isSel ? BOLD : undefined

@@ -127,9 +127,11 @@ export function Help({ width, height }: { width: number; height: number }) {
     col.push([[" ", t.dim]])
   }
   const rows = Math.max(...cols.map((x) => x.length))
+  // The logo is the first thing to go when the terminal is short.
+  const logo = height - 2 >= rows + 7
   return (
-    <Modal title="keys" width={w} height={Math.min(height - 2, rows + 7)}>
-      <ascii-font text="openstate" font="tiny" color={[t.accent, t.sources[1]!]} backgroundColor={t.panel} />
+    <Modal title="keys" width={w} height={Math.min(height - 2, rows + (logo ? 7 : 4))}>
+      {logo && <ascii-font text="openstate" font="tiny" color={[t.accent, t.sources[1]!]} backgroundColor={t.panel} />}
       <box flexDirection="row" flexGrow={1} overflow="hidden">
         {cols.map((col, i) => (
           <box key={i} width={colW} flexDirection="column">

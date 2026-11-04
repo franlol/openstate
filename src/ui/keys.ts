@@ -45,6 +45,12 @@ export function globalBinds(s: AppState): Bind[] {
     { key: "shift+s", desc: "sweep skipped", group: "app", run: () => s.sweep() },
     { key: "!", desc: "lock app", group: "app", run: () => s.toggleLock() },
     { key: "p", desc: "pause rec", group: "app", run: () => s.togglePause() },
+    { key: "v", desc: "visual select", group: "actions", run: () => s.startVisual() },
+    { key: "x", desc: "hide this type", group: "actions", run: () => s.hideType() },
+    { key: "ya", desc: "yank action", group: "yank", run: () => s.yank("action") },
+    { key: "ys", desc: "yank state", group: "yank", run: () => s.yank("state") },
+    { key: "yp", desc: "yank tree path", group: "yank", run: () => s.yank("path") },
+    { key: "yv", desc: "yank tree value", group: "yank", run: () => s.yank("value") },
     ...TABS.map((t, i) => ({ key: String(i + 1), desc: t, group: "inspector", run: () => (s.tab = t) })),
     { key: "/", desc: "filter", group: "tools", run: () => ((s.mode = "filter"), (s.input = s.filter)) },
     { key: ":", desc: "command", group: "tools", run: () => ((s.mode = "command"), (s.input = ""), (s.cmdIndex = 0)) },
@@ -120,6 +126,7 @@ export function panelBinds(s: AppState, panel: Focus): Bind[] {
     { key: "right", desc: "expand", group: panel, run: expand },
     { key: "return", desc: "toggle", group: panel, run: toggle },
     { key: "space", desc: "toggle", group: panel, run: toggle },
+    { key: "shift+p", desc: "pin subtree", group: panel, run: () => s.togglePin() },
   ]
 }
 
@@ -148,6 +155,7 @@ export function useGlobalKeys(s: AppState) {
   )
 
   const confirm = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "confirm"), [s])
+  const visual = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "visual"), [s])
   const insert = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "insert"), [s])
   // The type field has its own keys; in the payload field return and arrows belong to the textarea.
   const typeField = useMemo(
@@ -167,6 +175,25 @@ export function useGlobalKeys(s: AppState) {
       ]),
     }),
     [confirm],
+  )
+  useBindings(
+    () => ({
+      enabled: visual,
+      ...layer(s, [
+        { key: "j", desc: "extend down", group: "visual", run: () => s.step(1) },
+        { key: "k", desc: "extend up", group: "visual", run: () => s.step(-1) },
+        { key: "down", desc: "extend down", group: "visual", run: () => s.step(1) },
+        { key: "up", desc: "extend up", group: "visual", run: () => s.step(-1) },
+        { key: "]", desc: "extend down", group: "visual", run: () => s.step(1) },
+        { key: "[", desc: "extend up", group: "visual", run: () => s.step(-1) },
+        { key: "s", desc: "skip range", group: "visual", run: () => s.visualSkip() },
+        { key: "x", desc: "hide types", group: "visual", run: () => s.visualHide() },
+        { key: "y", desc: "yank range", group: "visual", run: () => s.visualYank() },
+        { key: "v", desc: "exit", group: "visual", run: () => s.endVisual() },
+        { key: "escape", desc: "exit", group: "visual", run: () => s.endVisual() },
+      ]),
+    }),
+    [visual],
   )
   useBindings(
     () => ({

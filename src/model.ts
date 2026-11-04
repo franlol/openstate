@@ -83,6 +83,16 @@ export function diff(a: unknown, b: unknown, path = ""): Change[] {
   return [{ path, before: a, after: b }]
 }
 
+// Value at a dotted path ("cart.items.1"); undefined when any segment is missing.
+export function getPath(value: unknown, path: string): unknown {
+  let v = value
+  for (const k of path ? path.split(".") : []) {
+    if (!isObj(v)) return undefined
+    v = v[k]
+  }
+  return v
+}
+
 export function preview(v: unknown, max = 40): string {
   let s: string
   if (v === undefined) s = "undefined"
@@ -122,4 +132,34 @@ export function flatten(value: unknown, expanded: Set<string>, path = "", depth 
 export function clock(t: number): string {
   const d = new Date(t)
   return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":")
+}
+
+export type JsonLine = { text: string; path: string }
+
+// JSON.stringify(value, null, 2) split into lines, each tagged with the dotted path it belongs to,
+// so the raw view can mark lines the same way the tree marks keys. Closing brackets share their opener's path.
+export function jsonLines(value: unknown): JsonLine[] {
+  const out: JsonLine[] = []
+  const walk = (v: unknown, path: string, indent: string, head: string, tail: string) => {
+    if (isObj(v) && typeof (v as { toJSON?: unknown }).toJSON === "function") v = (v as { toJSON: () => unknown }).toJSON()
+    const arr = Array.isArray(v)
+    const entries: [string, unknown][] = !isObj(v)
+      ? []
+      : arr
+        ? (v as unknown as unknown[]).map((x, i) => [String(i), x === undefined || typeof x === "function" ? null : x])
+        : Object.entries(v).filter(([, x]) => x !== undefined && typeof x !== "function" && typeof x !== "symbol")
+    if (!isObj(v) || !entries.length) {
+      const text = isObj(v) ? (arr ? "[]" : "{}") : (JSON.stringify(v) ?? "null")
+      out.push({ text: indent + head + text + tail, path })
+      return
+    }
+    out.push({ text: indent + head + (arr ? "[" : "{"), path })
+    entries.forEach(([k, x], i) => {
+      const key = arr ? "" : `${JSON.stringify(k)}: `
+      walk(x, path ? `${path}.${k}` : k, indent + "  ", key, i < entries.length - 1 ? "," : "")
+    })
+    out.push({ text: indent + (arr ? "]" : "}") + tail, path })
+  }
+  walk(value ?? null, "", "", "", "")
+  return out
 }

@@ -11,7 +11,9 @@ export function Header({ width }: { width: number }) {
   const store = s.store()
   const src = s.sourceOf(s.activeKey)
   const row = s.tab === "state" ? s.treeRows()[s.view().treeCursor] : undefined
-  const segs = row ? row.path.split(".") : []
+  const pinned = s.view().pinned
+  const segs = (row?.path ?? pinned ?? "").split(".").filter(Boolean)
+  const pinDepth = pinned ? pinned.split(".").length : 0
 
   // Each crumb remembers what clicking it does.
   const crumbs: { part: Part; click?: () => void }[] = [{ part: [" openstate", t.accent, BOLD] }]
@@ -23,9 +25,12 @@ export function Header({ width }: { width: number }) {
   segs.forEach((seg, i) => {
     const path = segs.slice(0, i + 1).join(".")
     const last = i === segs.length - 1
+    // The pinned part of the path is marked; clicking it unpins.
+    const inPin = i < pinDepth
     crumbs.push({
-      part: [seg, last ? t.fg : t.muted, last ? BOLD : undefined],
+      part: [i === pinDepth - 1 ? `${seg} ⌖` : seg, inPin ? t.accent : last ? t.fg : t.muted, last || inPin ? BOLD : undefined],
       click: () => {
+        if (inPin) s.view().pinned = null
         const idx = s.treeRows().findIndex((r) => r.path === path)
         if (idx >= 0) s.view().treeCursor = idx
         s.focus = "inspector"
