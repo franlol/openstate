@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react"
+import { homedir } from "node:os"
+import { CONFIG_PATH, DEFAULTS, format, OPTIONS, show } from "../settings"
 import { themes } from "../theme"
 import { BOLD, fit, Line, useApp, type Part } from "./kit"
 import { globalBinds, keyLabel, panelBinds, type Bind } from "./keys"
@@ -85,15 +87,62 @@ export function ThemePicker() {
           s.emit()
         }}
         onSelect={(i) => {
-          s.setTheme(themes[i]!.id)
           s.picker = null
-          s.notify(`theme · ${themes[i]!.name}`)
+          s.applySettings({ theme: themes[i]!.id })
           s.emit()
         }}
       />
       <text>
         <span fg={t.dim}>j/k preview · enter keep · esc cancel</span>
       </text>
+    </Modal>
+  )
+}
+
+// `:set` with no arguments: every option, its value and what it does; changes save at once.
+export function SettingsCard({ width }: { width: number }) {
+  const s = useApp()
+  const t = s.theme
+  const card = s.settingsCard
+  if (!card) return null
+  const w = Math.min(width - 4, 72)
+  const inner = w - 4
+  const valW = Math.max(...OPTIONS.flatMap((o) => (o.values?.() ?? [show(o.name, s.settings)]).map((v) => v.length))) + 5
+  const cur = OPTIONS[card.index]!
+  return (
+    <Modal title="settings" width={w} height={OPTIONS.length + 7}>
+      {OPTIONS.map((o, i) => {
+        const on = i === card.index
+        const v = show(o.name, s.settings)
+        const changed = s.settings[o.name] !== DEFAULTS[o.name]
+        const value = on ? `‹ ${v} ›` : `  ${v}  `
+        return (
+          <Line
+            key={o.name}
+            bg={on ? t.selBg : t.panel}
+            parts={fit(
+              [
+                [on ? "▌" : " ", t.accent],
+                [o.name.padEnd(8), on ? t.fg : t.sources[1]!, BOLD],
+                [value.padEnd(valW), changed ? t.accent : t.fg, changed ? BOLD : undefined],
+                [o.desc, t.muted],
+              ],
+              inner,
+            )}
+            onMouseDown={() => {
+              if (on) s.stepSetting(1)
+              else card.index = i
+              s.emit()
+            }}
+          />
+        )
+      })}
+      <Line parts={[[" ", t.dim]]} />
+      {/* The command-line form of the highlighted option, so the card also teaches :set. */}
+      <Line parts={fit([[" :set ", t.dim], [format(cur.name, s.settings), t.fg], [`  ${cur.help}`, t.muted]], inner)} />
+      <Line parts={[[" ", t.dim]]} />
+      <Line parts={fit([[" j/k option · h/l change · esc close · accent: changed from default", t.dim]], inner)} />
+      <Line parts={fit([[` saved to ${CONFIG_PATH.replace(homedir(), "~")}`, t.dim]], inner)} />
     </Modal>
   )
 }
@@ -109,6 +158,9 @@ export function Help({ width, height }: { width: number; height: number }) {
     ...panelBinds(s, "actions").map((b) => ({ ...b, group: nav.has(b.key) ? "lists" : "actions" })),
     ...panelBinds(s, "sources").filter((b) => !nav.has(b.key)),
     ...panelBinds(s, "inspector").filter((b) => !nav.has(b.key) || b.key === "h" || b.key === "l"),
+    // Not keys, but the way into options; listed so they are found from here.
+    { key: ":set", desc: "settings", group: "tools", run: () => {} },
+    { key: ":set x=v", desc: "change one", group: "tools", run: () => {} },
   ]
   const groups = new Map<string, Bind[]>()
   for (const b of all) {

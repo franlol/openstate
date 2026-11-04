@@ -3,6 +3,7 @@ import { registerEscapeClearsPendingSequence, registerExCommands, registerLeader
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { KeymapProvider } from "@opentui/keymap/react"
 import { createRoot } from "@opentui/react"
+import { loadSettings } from "./settings"
 import { AppState, commands } from "./state"
 import { App, AppContext } from "./ui/App"
 
@@ -23,7 +24,9 @@ if (debugFile) {
   keymap.intercept("key:after", (ctx) => log({ key: ctx.event.name, reason: ctx.reason, handled: ctx.handled }))
 }
 
-const state = new AppState()
+const { settings, errors } = await loadSettings()
+const state = new AppState(settings)
+state.configErrors = errors
 // Host clipboard when local, OSC 52 through the terminal otherwise (e.g. over SSH).
 const clipboard = createClipboard({ host: createHostClipboard(), terminal: createRendererClipboardAdapter(renderer) })
 state.copyText = async (text) => {

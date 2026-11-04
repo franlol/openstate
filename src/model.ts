@@ -144,6 +144,18 @@ export function clock(t: number): string {
   return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":")
 }
 
+// Time since the previous action, 8 columns wide like the clock: "  +0.12s", "  +12.3s", " +2m05s".
+export function since(ms: number): string {
+  const sign = ms < 0 ? "-" : "+"
+  const a = Math.abs(ms) / 1000
+  let s: string
+  if (a < 10) s = `${a.toFixed(2)}s`
+  else if (a < 60) s = `${a.toFixed(1)}s`
+  else if (a < 3600) s = `${Math.floor(a / 60)}m${String(Math.floor(a % 60)).padStart(2, "0")}s`
+  else s = `${Math.floor(a / 3600)}h${String(Math.floor((a % 3600) / 60)).padStart(2, "0")}m`
+  return (sign + s).padStart(8)
+}
+
 export type JsonLine = { text: string; path: string }
 
 // JSON.stringify(value, null, 2) split into lines, each tagged with the dotted path it belongs to,

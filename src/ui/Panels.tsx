@@ -1,6 +1,6 @@
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { Fragment, useEffect, useRef, type ReactNode } from "react"
-import { changeCount, clock, type Action } from "../model"
+import { changeCount, clock, since, type Action } from "../model"
 import type { AppState, Focus } from "../state"
 import { mix } from "../theme"
 import { BOLD, DIM, fit, Line, scrollbar, spread, STRIKE, useApp, type Part } from "./kit"
@@ -161,11 +161,12 @@ export function Actions({ width }: { width: number }) {
   const idx = s.selectedIndex()
   const inner = width - 3
   const ref = useScrollTo(sel ? `act-${sel.id}` : undefined)
-  // Render a window around the cursor; the store keeps up to MAX_AGE actions.
+  // Render a window around the cursor; the store keeps up to `maxage` actions.
   const from = Math.max(0, Math.min(idx - WINDOW / 2, tl.length - WINDOW))
   const visible = tl.slice(from, from + WINDOW)
   const locked = s.target()?.locked ? " · ◆ locked" : ""
   const hidden = s.view().hidden.size
+  const delta = s.settings.time === "delta"
   const moved = s.merge ? 0 : s.movedCount(s.activeKey)
   // While a moved action is selected, a ghost row marks the slot it came from.
   const home = sel ? s.home(sel) : null
@@ -217,7 +218,7 @@ export function Actions({ width }: { width: number }) {
           const left: Part[] = [
             [isSel ? "▌" : " ", t.accent],
             // Moved actions sit out of time order; dim their clock so that reads as expected.
-            [clock(a.time) + " ", future || out ? t.dim : t.muted],
+            [(delta && i > 0 ? since(a.time - tl[i - 1]!.time) : clock(a.time)) + " ", future || out ? t.dim : t.muted],
           ]
           if (src) left.push([src.name.slice(0, 8).padEnd(9), t.sources[src.color % t.sources.length]!])
           if (a.fromDevtools) left.push(["⇡ ", t.add, BOLD])

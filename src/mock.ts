@@ -155,12 +155,11 @@ const specs: Spec[] = [
   },
 ]
 
-export const MAX_AGE = 500
 let actionId = 0
 
 const TRACE = ["at dispatch (redux/src/createStore.ts:271:7)", "at HTMLUnknownElement.callCallback (react-dom.js:3945)"]
 
-export function startMock(onChange: () => void, isPaused: () => boolean): Source[] {
+export function startMock(onChange: () => void, isPaused: () => boolean, maxAge: () => number): Source[] {
   const sources: Source[] = ["shop-web", "api-node", "admin-panel"].map((id, i) => ({
     id,
     name: id,
@@ -171,7 +170,7 @@ export function startMock(onChange: () => void, isPaused: () => boolean): Source
   }))
   for (const spec of specs) {
     const src = sources.find((s) => s.id === spec.sourceId)!
-    src.stores.push(mockStore(spec, src, onChange, isPaused))
+    src.stores.push(mockStore(spec, src, onChange, isPaused, maxAge))
   }
 
   // admin-panel drops and comes back, to exercise the disconnected state.
@@ -187,7 +186,7 @@ export function startMock(onChange: () => void, isPaused: () => boolean): Source
 }
 
 // One fake app store: it owns its live state and history, like redux-devtools-instrument.
-function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () => boolean): Store {
+function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () => boolean, maxAge: () => number): Store {
   const key = `${spec.sourceId}/${spec.name}`
   let state = spec.init
   let seq = 0
@@ -211,7 +210,8 @@ function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () =
       fromDevtools,
     }
     store.actions.push(a)
-    if (store.actions.length > MAX_AGE) store.actions.shift()
+    // Like Redux DevTools' maxAge: the oldest kept action becomes the new starting point.
+    while (store.actions.length > maxAge()) store.actions.shift()
     if (!silent) onChange()
   }
 

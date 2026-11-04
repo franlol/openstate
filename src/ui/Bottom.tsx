@@ -1,6 +1,7 @@
 import type { MouseEvent } from "@opentui/core"
 import { stringifyKeySequence } from "@opentui/keymap"
 import { useActiveKeys, usePendingSequence } from "@opentui/keymap/react"
+import { format, OPTIONS } from "../settings"
 import type { AppState } from "../state"
 import { mix } from "../theme"
 import { BOLD, fit, Line, spread, useApp, type Part } from "./kit"
@@ -12,6 +13,7 @@ function modeOf(s: AppState): { name: string; color: string } {
   const t = s.theme
   if (s.help) return { name: "HELP", color: t.sources[1]! }
   if (s.picker) return { name: "THEME", color: t.sources[1]! }
+  if (s.settingsCard) return { name: "SET", color: t.sources[1]! }
   if (s.mode === "command") return { name: "COMMAND", color: t.warn }
   if (s.mode === "filter") return { name: "FILTER", color: t.add }
   if (s.mode === "insert") return { name: "INSERT", color: t.add }
@@ -171,6 +173,9 @@ export function Suggestions({ width }: { width: number }) {
   const s = useApp()
   const t = s.theme
   if (s.mode !== "command") return null
+  // After "set ", list the options with their values instead of commands.
+  const arg = /^set\s+(?:.*\s)?(?:no|inv)?([a-z]*)$/.exec(s.input)
+  if (arg) return <SetSuggestions width={width} prefix={arg[1]!} />
   const matches = s.commandMatches(s.input)
   if (!matches.length) return null
   const sel = s.cmdIndex % matches.length
@@ -203,6 +208,51 @@ export function Suggestions({ width }: { width: number }) {
           onMouseDown={() => {
             s.mode = "normal"
             s.runCommand(c.name)
+            s.emit()
+          }}
+        />
+      ))}
+    </box>
+  )
+}
+
+function SetSuggestions({ width, prefix }: { width: number; prefix: string }) {
+  const s = useApp()
+  const t = s.theme
+  const opts = OPTIONS.filter((o) => o.name.startsWith(prefix))
+  if (!opts.length) return null
+  const w = Math.min(90, width - 2)
+  return (
+    <box
+      position="absolute"
+      bottom={2}
+      left={0}
+      width={w}
+      border
+      borderStyle="rounded"
+      borderColor={t.borderActive}
+      bottomTitle=" noflash · flash! toggle · flash? show · flash& default "
+      bottomTitleAlignment="right"
+      backgroundColor={t.panel}
+      flexDirection="column"
+      zIndex={20}
+    >
+      {opts.map((o) => (
+        <Line
+          key={o.name}
+          bg={t.panel}
+          parts={fit(
+            [
+              [" ", t.dim],
+              [format(o.name, s.settings).padEnd(18), t.sources[1]!, BOLD],
+              [o.desc.padEnd(32), t.muted],
+              [o.kind === "bool" ? "on/off" : o.kind === "number" ? `${o.min}–${o.max}` : o.values!().join(" | "), t.dim],
+            ],
+            w - 2,
+          )}
+          onMouseDown={() => {
+            // Fill the line so only the value is left to type.
+            s.input = `set ${o.name}${o.kind === "bool" ? "!" : "="}`
             s.emit()
           }}
         />

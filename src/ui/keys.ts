@@ -1,6 +1,7 @@
 import type { Renderable } from "@opentui/core"
 import { reactiveMatcherFromStore, useBindings } from "@opentui/keymap/react"
 import { useMemo, type RefObject } from "react"
+import { OPTIONS } from "../settings"
 import { FOCI, TABS, type AppState, type Focus } from "../state"
 
 export type Bind = { key: string; desc: string; group: string; run: () => void }
@@ -146,12 +147,14 @@ const layer = (s: AppState, binds: Bind[]) => ({
 })
 
 // Mode string drives which layers are live: normal-mode keys must not eat typing.
-const modeOf = (s: AppState) => (s.help ? "help" : s.picker ? "picker" : s.confirm ? "confirm" : s.mode)
+const modeOf = (s: AppState) =>
+  s.help ? "help" : s.picker ? "picker" : s.settingsCard ? "settings" : s.confirm ? "confirm" : s.mode
 
 export function useGlobalKeys(s: AppState) {
   const normal = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "normal"), [s])
   const help = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "help"), [s])
   const picker = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "picker"), [s])
+  const settings = useMemo(() => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "settings"), [s])
   const typing = useMemo(
     () => reactiveMatcherFromStore(s.subscribe, () => modeOf(s), (m) => m === "filter" || m === "command"),
     [s],
@@ -253,6 +256,30 @@ export function useGlobalKeys(s: AppState) {
     }),
     [picker],
   )
+  useBindings(() => {
+    const move = (n: number) => {
+      const c = s.settingsCard
+      if (c) c.index = Math.max(0, Math.min(OPTIONS.length - 1, c.index + n))
+    }
+    const close = () => (s.settingsCard = null)
+    return {
+      enabled: settings,
+      ...layer(s, [
+        { key: "j", desc: "next option", group: "settings", run: () => move(1) },
+        { key: "k", desc: "prev option", group: "settings", run: () => move(-1) },
+        { key: "down", desc: "next option", group: "settings", run: () => move(1) },
+        { key: "up", desc: "prev option", group: "settings", run: () => move(-1) },
+        { key: "l", desc: "next value", group: "settings", run: () => s.stepSetting(1) },
+        { key: "h", desc: "prev value", group: "settings", run: () => s.stepSetting(-1) },
+        { key: "right", desc: "next value", group: "settings", run: () => s.stepSetting(1) },
+        { key: "left", desc: "prev value", group: "settings", run: () => s.stepSetting(-1) },
+        { key: "space", desc: "next value", group: "settings", run: () => s.stepSetting(1) },
+        { key: "return", desc: "next value", group: "settings", run: () => s.stepSetting(1) },
+        { key: "escape", desc: "close", group: "settings", run: close },
+        { key: "q", desc: "close", group: "settings", run: close },
+      ]),
+    }
+  }, [settings])
   useBindings(
     () => ({
       enabled: typing,

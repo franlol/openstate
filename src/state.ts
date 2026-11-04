@@ -3,6 +3,7 @@ import { homedir } from "node:os"
 import { resolve } from "node:path"
 import { exportHistory, importHistory } from "./history"
 import { startMock } from "./mock"
+import { DEFAULTS, format, OPTIONS, parseSet, saveSettings, stepValue, type OptionName, type Settings } from "./settings"
 import { findTheme, themes, type Theme } from "./theme"
 
 export type Focus = "sources" | "actions" | "inspector"
@@ -31,7 +32,8 @@ export type SourceRow = { kind: "source"; source: Source } | { kind: "store"; so
 export type Command = { name: string; desc: string; run: (s: AppState, arg: string) => void }
 
 export const commands: Command[] = [
-  { name: "theme", desc: "pick a theme (or :theme <name>)", run: (s, arg) => (arg ? s.setTheme(arg) : s.openPicker()) },
+  { name: "set", desc: "settings (or :set name=value)", run: (s, arg) => s.runSet(arg) },
+  { name: "theme", desc: "pick a theme (or :theme <name>)", run: (s, arg) => (arg ? s.applySettings({ theme: findTheme(arg).id }) : s.openPicker()) },
   { name: "merge", desc: "toggle merged timeline of all apps", run: (s) => s.toggleMerge() },
   { name: "pause", desc: "pause / resume recording", run: (s) => s.togglePause() },
   { name: "skip", desc: "skip the selected action", run: (s) => s.toggleSkip() },
@@ -80,6 +82,11 @@ export class AppState {
   paused = false
   help = false
   picker: { index: number; prev: string } | null = null
+  // The :set card, with the highlighted option.
+  settingsCard: { index: number } | null = null
+  settings: Settings
+  // Problems reading the config file, shown instead of the greeting.
+  configErrors: string[] = []
   activeKey: string
   srcCursor = 1
   cmdIndex = 0
@@ -125,8 +132,14 @@ export class AppState {
   private version = 0
   private animTimer: ReturnType<typeof setInterval> | null = null
 
-  constructor() {
-    this.sources = startMock(() => this.onData(), () => this.paused)
+  constructor(settings: Settings = DEFAULTS) {
+    this.settings = { ...settings }
+    this.theme = findTheme(this.settings.theme)
+    this.sources = startMock(
+      () => this.onData(),
+      () => this.paused,
+      () => this.settings.maxage,
+    )
     this.activeKey = this.sources[0]!.stores[0]!.key
     for (const st of this.allStores()) this.lastSeen.set(st.key, st.actions.length)
   }
@@ -244,7 +257,7 @@ export class AppState {
   }
 
   flashLevel(t: number | undefined): number {
-    if (t === undefined) return 0
+    if (t === undefined || !this.settings.flash) return 0
     return Math.max(0, 1 - (Date.now() - t) / FLASH_MS)
   }
 
@@ -253,6 +266,37 @@ export class AppState {
     const ms = error ? 5000 : 2500
     this.message = { text, error, until: Date.now() + ms }
     setTimeout(() => this.emit(), ms + 100)
+  }
+
+  // --- settings ------------------------------------------------------------------
+  // `:set` alone opens the card; with arguments it works like vim's.
+  runSet(arg: string) {
+    if (!arg.trim()) return void (this.settingsCard = { index: 0 })
+    try {
+      const { changed, shown } = parseSet(arg.trim().split(/\s+/), this.settings)
+      if (Object.keys(changed).length) this.applySettings(changed)
+      if (shown.length) this.notify(shown.join("  "))
+    } catch (e) {
+      this.notify(`E: ${(e as Error).message}`, true)
+    }
+  }
+  applySettings(changed: Partial<Settings>) {
+    Object.assign(this.settings, changed)
+    if (changed.theme) this.theme = findTheme(changed.theme)
+    const names = Object.keys(changed) as OptionName[]
+    const note = names.map((n) => format(n, this.settings)).join("  ")
+    const hint = changed.maxage !== undefined ? " · older actions drop as new ones arrive" : ""
+    saveSettings(this.settings).then(
+      () => (this.notify(`${note}${hint}`), this.emit()),
+      (e) => (this.notify(`E: ${note} applied but not saved: ${(e as Error).message}`, true), this.emit()),
+    )
+  }
+  // h/l and space in the settings card.
+  stepSetting(dir: 1 | -1) {
+    const card = this.settingsCard
+    const o = card && OPTIONS[card.index]
+    if (!o) return
+    this.applySettings({ [o.name]: stepValue(o, this.settings, dir) })
   }
 
   setTheme(id: string) {

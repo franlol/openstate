@@ -5,7 +5,7 @@ import { DispatchCard } from "./Dispatch"
 import { Inspector } from "./Inspector"
 import { useApp } from "./kit"
 import { useGlobalKeys } from "./keys"
-import { Help, Splash, ThemePicker } from "./Overlays"
+import { Help, SettingsCard, Splash, ThemePicker } from "./Overlays"
 import { Actions, Sources } from "./Panels"
 import { Header, Track } from "./Top"
 
@@ -27,7 +27,9 @@ export function App() {
   if (splash) return <Splash />
   if (!s.greeted) {
     s.greeted = true
-    s.notify("openstate · ? keys · : commands · q quit")
+    const errs = s.configErrors
+    if (errs.length) s.notify(`E: ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1} more)` : ""} · :set to fix`, true)
+    else s.notify("openstate · ? keys · : commands · :set settings · q quit")
   }
 
   s.screenW = width
@@ -47,6 +49,7 @@ export function App() {
       <WhichKey />
       <DispatchCard width={width} />
       <ThemePicker />
+      <SettingsCard width={width} />
       <Help width={width} height={height} />
     </box>
   )
