@@ -14,6 +14,7 @@ function modeOf(s: AppState): { name: string; color: string } {
   if (s.picker) return { name: "THEME", color: t.sources[1]! }
   if (s.mode === "command") return { name: "COMMAND", color: t.warn }
   if (s.mode === "filter") return { name: "FILTER", color: t.add }
+  if (s.mode === "insert") return { name: "INSERT", color: t.add }
   return { name: "NORMAL", color: t.accent }
 }
 
@@ -48,6 +49,11 @@ export function StatusLine({ width }: { width: number }) {
       ? { text: " ❚❚ paused ", fg: t.warn, bg: c, click: emit(() => s.togglePause()) }
       : { text: " ● rec ", fg: t.remove, bg: c, click: emit(() => s.togglePause()) },
   ]
+  const target = s.target()
+  if (target?.locked)
+    left.push({ text: " ◆ LOCKED ", fg: t.bg, bg: t.remove, bold: true, click: emit(() => s.toggleLock()) })
+  if (s.playing)
+    left.push({ text: ` ▶ ${s.speed}× `, fg: t.bg, bg: t.accent, bold: true, click: emit(() => s.togglePlay()) })
   if (s.merge) left.push({ text: " ⧉ all apps ", fg: t.fg, bg: c, click: emit(() => s.toggleMerge()) })
   if (s.filter) left.push({ text: ` /${s.filter} `, fg: t.add, bg: c, click: emit(() => (s.filter = "")) })
 
@@ -79,8 +85,11 @@ export function CmdLine({ width }: { width: number }) {
   const s = useApp()
   const t = s.theme
   const pending = usePendingSequence()
-  if (s.mode !== "normal") return <Prompt width={width} />
+  if (s.mode === "command" || s.mode === "filter") return <Prompt width={width} />
+  if (s.mode === "insert") return <Line parts={fit([["-- INSERT --", t.fg, BOLD]], width)} bg={t.bg} />
 
+  if (s.confirm)
+    return <Line parts={fit([[`${s.confirm.text} `, t.warn, BOLD], ["[y/N]", t.fg]], width)} bg={t.bg} />
   const msg = s.message && s.message.until > Date.now() ? s.message : null
   const left: Part[] = msg ? [[msg.text, msg.error ? t.remove : t.fg, msg.error ? BOLD : undefined]] : []
   const showcmd: Part[] = pending.length ? [[`${keyLabel(stringifyKeySequence(pending, { preferDisplay: true }))} `, t.fg, BOLD]] : []

@@ -4,7 +4,7 @@ import { findTheme, themes, type Theme } from "./theme"
 
 export type Focus = "sources" | "actions" | "inspector"
 export type Tab = "state" | "action" | "diff" | "trace"
-export type Mode = "normal" | "filter" | "command"
+export type Mode = "normal" | "filter" | "command" | "insert"
 export const TABS: Tab[] = ["state", "action", "diff", "trace"]
 export const FOCI: Focus[] = ["sources", "actions", "inspector"]
 export const MERGED = "*"
@@ -29,12 +29,30 @@ export const commands: Command[] = [
   { name: "pause", desc: "pause / resume recording", run: (s) => s.togglePause() },
   { name: "skip", desc: "skip the selected action", run: (s) => s.toggleSkip() },
   { name: "live", desc: "jump back to the newest action", run: (s) => s.goLive() },
-  { name: "clear", desc: "clear actions of the current store", run: (s) => s.clearStore() },
+  { name: "dispatch", desc: "dispatch an action to the store", run: (s) => s.openDispatch() },
+  { name: "commit", desc: "make the selected state the base", run: (s) => s.commit() },
+  { name: "revert", desc: "drop actions after the commit", run: (s) => s.revert() },
+  { name: "sweep", desc: "remove skipped actions", run: (s) => s.sweep() },
+  { name: "reset", desc: "back to the initial state", run: (s) => s.reset() },
+  { name: "lock", desc: "lock / unlock the app's own changes", run: (s) => s.toggleLock() },
+  { name: "play", desc: "play / pause actions from the cursor", run: (s) => s.togglePlay() },
   { name: "help", desc: "show keybindings", run: (s) => (s.help = true) },
   { name: "quit", desc: "exit openstate", run: (s) => s.quit() },
 ]
 
 const FLASH_MS = 900
+export const SPEEDS = [0.5, 1, 2, 4, 8]
+
+export type Draft = {
+  storeKey: string
+  // Known action types with their use count, snapshotted on open so the list holds still while typing.
+  types: { type: string; uses: number }[]
+  type: string
+  payload: string
+  field: "type" | "payload"
+  pick: number
+  error?: string
+}
 const MIN_W: Record<Focus, number> = { sources: 16, actions: 28, inspector: 30 }
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 
@@ -68,6 +86,13 @@ export class AppState {
   // Border being dragged with the mouse: the panel on its left.
   dragging: "sources" | "actions" | null = null
   screenW = 120
+  // Vim-style y/N question in the command line.
+  confirm: { text: string; run: () => void } | null = null
+  // Action being written in the dispatch card (insert mode).
+  draft: Draft | null = null
+  playing = false
+  speed = 1
+  private playTimer: ReturnType<typeof setTimeout> | null = null
   // Track cell under the mouse.
   hover: { cell: number } | null = null
   // Seconds shown by the main track, set when it renders; H/L travel half of it.
@@ -160,20 +185,26 @@ export class AppState {
       const last = st.actions[st.actions.length - 1]
       const total = last ? last.seq + 1 : 0
       if (total <= seen) continue
-      const fresh = st.actions.slice(-(total - seen))
+      // Revert and sweep leave gaps in seq, so pick new actions by seq rather than by count.
+      const fresh = st.actions.filter((a) => a.seq >= seen)
       this.lastSeen.set(st.key, total)
       const visible = this.merge || st.key === this.activeKey
       if (!visible) this.unseen.set(st.key, (this.unseen.get(st.key) ?? 0) + fresh.length)
       for (const a of fresh) this.flashActions.set(a.id, now)
-      if (visible && this.view().cursor === null) {
-        for (const c of diff(fresh[0]!.prev, fresh[fresh.length - 1]!.state)) {
-          const parts = c.path.split(".")
-          for (let i = 1; i <= parts.length; i++) this.flashPaths.set(parts.slice(0, i).join("."), now)
-        }
-      }
+      if (visible && this.view().cursor === null) this.flashChanges(fresh[0]!.prev, fresh[fresh.length - 1]!.state)
     }
     this.animate()
     this.emit()
+  }
+
+  // Flash every changed path (and its ancestors) in the state tree.
+  private flashChanges(before: unknown, after: unknown) {
+    const now = Date.now()
+    for (const c of diff(before, after)) {
+      const parts = c.path.split(".")
+      for (let i = 1; i <= parts.length; i++) this.flashPaths.set(parts.slice(0, i).join("."), now)
+    }
+    this.animate()
   }
 
   // Re-render while flashes fade, then stop the timer.
@@ -233,21 +264,176 @@ export class AppState {
     this.paused = !this.paused
     this.notify(this.paused ? "recording paused" : "recording resumed")
   }
+  // --- app commands (sent through the store connection) ----------------------
+  // The store the user is acting on: the selected action's store, so it works merged too.
+  target(): Store | undefined {
+    const a = this.selected()
+    return a ? this.store(a.storeKey) : this.store()
+  }
+  private committedIndex(st: Store) {
+    return st.actions.findIndex((a) => a.id === st.commitId)
+  }
   toggleSkip() {
     const a = this.selected()
-    if (!a || a.seq === 0) return
-    a.skipped = !a.skipped
-    this.notify(a.skipped ? `skipped ${a.type}` : `restored ${a.type}`)
+    const st = this.target()
+    if (!a || !st || a.seq === 0) return
+    if (st.actions.indexOf(a) <= this.committedIndex(st)) return this.notify("E: committed actions cannot be skipped", true)
+    st.conn.toggle(a.id)
+    this.notify(a.skipped ? `skipped ${a.type}, later states recomputed` : `restored ${a.type}`)
   }
-  goLive() {
-    this.view().cursor = null
+  commit() {
+    const a = this.selected()
+    const st = this.target()
+    if (!a || !st) return
+    st.conn.commit(a.id)
+    this.notify(`committed at ${a.type} #${a.seq} · revert returns here`)
   }
-  clearStore() {
-    const st = this.store()
+  revert() {
+    const st = this.target()
     if (!st) return
-    st.actions.splice(0, st.actions.length - 1)
+    const n = st.actions.length - 1 - Math.max(0, this.committedIndex(st))
+    if (!n) return this.notify("nothing to revert")
+    this.ask(`revert ${n} action${n > 1 ? "s" : ""} to ${st.commitId === null ? "the initial state" : "the commit"}?`, () => {
+      st.conn.revert()
+      this.goLive()
+      this.notify(`reverted ${n} action${n > 1 ? "s" : ""}`)
+    })
+  }
+  reset() {
+    const st = this.target()
+    if (!st) return
+    this.ask(`reset ${st.name} to its initial state, dropping all ${st.actions.length - 1} actions?`, () => {
+      st.conn.commit(null)
+      st.conn.revert()
+      this.goLive()
+      this.notify(`${st.name} reset`)
+    })
+  }
+  sweep() {
+    const st = this.target()
+    if (!st) return
+    const n = st.actions.filter((a) => a.skipped).length
+    if (!n) return this.notify("no skipped actions to sweep")
+    this.ask(`remove ${n} skipped action${n > 1 ? "s" : ""} for good?`, () => {
+      st.conn.sweep()
+      this.notify(`swept ${n} action${n > 1 ? "s" : ""}`)
+    })
+  }
+  toggleLock() {
+    const st = this.target()
+    if (!st) return
+    st.conn.lock(!st.locked)
+    this.notify(st.locked ? `${st.name} locked · the app's own changes are ignored` : `${st.name} unlocked`)
+  }
+  ask(text: string, run: () => void) {
+    this.confirm = { text, run }
+  }
+  answer(yes: boolean) {
+    const c = this.confirm
+    this.confirm = null
+    if (yes) c?.run()
+  }
+
+  // --- dispatch -----------------------------------------------------------------
+  openDispatch() {
+    const st = this.target()
+    if (!st) return
+    this.stopPlay()
+    const uses = new Map<string, number>()
+    for (const a of st.actions) if (a.type !== "@@INIT") uses.set(a.type, (uses.get(a.type) ?? 0) + 1)
+    const types = [...uses]
+      .map(([type, n]) => ({ type, uses: n }))
+      .sort((a, b) => b.uses - a.uses || a.type.localeCompare(b.type))
+    this.draft = { storeKey: st.key, types, type: "", payload: "", field: "type", pick: 0 }
+    this.mode = "insert"
+  }
+  closeDispatch() {
+    this.draft = null
+    this.mode = "normal"
+  }
+  // Known types matching the typed text: prefix matches first, then by use (stable sort).
+  typeMatches(): { type: string; uses: number }[] {
+    const d = this.draft
+    if (!d) return []
+    const q = d.type.toLowerCase()
+    const rank = (t: string) => (t.toLowerCase().startsWith(q) ? 0 : 1)
+    return d.types.filter((x) => fuzzy(q, x.type.toLowerCase())).sort((a, b) => rank(a.type) - rank(b.type))
+  }
+  movePick(n: number) {
+    const d = this.draft
+    if (d) d.pick = clamp(d.pick + n, 0, Math.max(0, this.typeMatches().length - 1))
+  }
+  // Take the highlighted type and prefill the payload from its last use.
+  acceptType() {
+    const d = this.draft
+    if (!d) return
+    const pick = this.typeMatches()[d.pick]?.type
+    if (pick && pick !== d.type) {
+      d.type = pick
+      const last = this.store(d.storeKey)?.actions.findLast((a) => a.type === pick)
+      if (!d.payload.trim() && last?.payload !== undefined) d.payload = JSON.stringify(last.payload, null, 2)
+    }
+    d.field = "payload"
+    d.error = undefined
+  }
+  submitDispatch() {
+    const d = this.draft
+    if (!d) return
+    if (!d.type.trim()) return void (d.error = "type is required")
+    let payload: unknown
+    try {
+      payload = d.payload.trim() ? JSON.parse(d.payload) : undefined
+    } catch (e) {
+      d.field = "payload"
+      return void (d.error = `invalid JSON: ${(e as Error).message.replace(/^JSON Parse error: /, "")}`)
+    }
+    this.store(d.storeKey)?.conn.dispatch({ type: d.type.trim(), payload })
+    this.closeDispatch()
+    this.goLive()
+    this.notify(`⇡ dispatched ${d.type.trim()}`)
+  }
+
+  // --- playback -----------------------------------------------------------------
+  // Replays actions from the cursor at their real pace (scaled by speed), flashing each change.
+  togglePlay() {
+    if (this.playing) return this.stopPlay()
+    const tl = this.timeline()
+    if (tl.length < 2) return
+    if (this.view().cursor === null) this.view().cursor = tl[0]!.id
+    this.playing = true
+    this.scheduleNext()
+  }
+  stopPlay() {
+    this.playing = false
+    if (this.playTimer) clearTimeout(this.playTimer)
+    this.playTimer = null
+  }
+  setSpeed(dir: 1 | -1) {
+    const i = SPEEDS.indexOf(this.speed)
+    this.speed = SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]!
+    this.notify(`playback ${this.speed}×`)
+  }
+  private scheduleNext() {
+    const tl = this.timeline()
+    const i = this.selectedIndex()
+    const cur = tl[i]
+    const next = tl[i + 1]
+    if (!cur || !next || this.view().cursor === null) return this.stopPlay()
+    const gap = clamp(next.time - cur.time, 120, 1500) / this.speed
+    this.playTimer = setTimeout(() => {
+      if (!this.playing) return
+      this.step(1)
+      const a = this.selected()
+      if (a) this.flashChanges(a.prev, a.state)
+      if (this.view().cursor === null) this.stopPlay()
+      else this.scheduleNext()
+      this.emit()
+    }, gap)
+  }
+
+  goLive() {
+    this.stopPlay()
     this.view().cursor = null
-    this.notify(`cleared ${st.name}`)
   }
   removeSource(id: string) {
     const src = this.sources.find((s) => s.id === id)

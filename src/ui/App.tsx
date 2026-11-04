@@ -1,6 +1,7 @@
 import { useTerminalDimensions } from "@opentui/react"
 import { useEffect } from "react"
 import { CmdLine, StatusLine, Suggestions, WhichKey } from "./Bottom"
+import { DispatchCard } from "./Dispatch"
 import { Inspector } from "./Inspector"
 import { useApp } from "./kit"
 import { useGlobalKeys } from "./keys"
@@ -44,6 +45,7 @@ export function App() {
       <CmdLine width={width} />
       <Suggestions width={width} />
       <WhichKey />
+      <DispatchCard width={width} />
       <ThemePicker />
       <Help width={width} height={height} />
     </box>

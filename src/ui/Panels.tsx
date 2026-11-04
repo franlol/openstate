@@ -1,5 +1,5 @@
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
-import { useEffect, useRef, type ReactNode } from "react"
+import { Fragment, useEffect, useRef, type ReactNode } from "react"
 import { changeCount, clock } from "../model"
 import type { Focus } from "../state"
 import { mix } from "../theme"
@@ -153,7 +153,8 @@ export function Actions({ width }: { width: number }) {
   // Render a window around the cursor; the store keeps up to MAX_AGE actions.
   const from = Math.max(0, Math.min(idx - WINDOW / 2, tl.length - WINDOW))
   const visible = tl.slice(from, from + WINDOW)
-  const title = s.filter ? `actions /${s.filter}` : s.merge ? "actions · all apps" : "actions"
+  const locked = s.target()?.locked ? " · ◆ locked" : ""
+  const title = (s.filter ? `actions /${s.filter}` : s.merge ? "actions · all apps" : "actions") + locked
   return (
     <Panel id="actions" title={title} bottomTitle={` ${tl.length} `} width={width}>
       <scrollbox ref={ref} flexGrow={1} stickyScroll stickyStart="bottom" scrollbarOptions={scrollbar(t)}>
@@ -173,19 +174,26 @@ export function Actions({ width }: { width: number }) {
             [clock(a.time) + " ", future ? t.dim : t.muted],
           ]
           if (src) left.push([src.name.slice(0, 8).padEnd(9), t.sources[src.color % t.sources.length]!])
+          if (a.fromDevtools) left.push(["⇡ ", t.add, BOLD])
           left.push([a.type, typeFg, attrs])
           const right: Part[] = changes ? [[` ±${changes} `, future ? t.dim : t.muted]] : [[" ", t.dim]]
+          // Revert returns to the state right below this line.
+          const committed = s.store(a.storeKey)?.commitId === a.id
           return (
-            <Line
-              key={a.id}
-              id={`act-${a.id}`}
-              parts={spread(left, right, inner)}
-              bg={bg}
-              onMouseDown={() => {
-                s.selectAction(a.id)
-                s.emit()
-              }}
-            />
+            <Fragment key={a.id}>
+              <Line
+                id={`act-${a.id}`}
+                parts={spread(left, right, inner)}
+                bg={bg}
+                onMouseDown={() => {
+                  s.selectAction(a.id)
+                  s.emit()
+                }}
+              />
+              {committed && (
+                <Line parts={[["── committed " + "─".repeat(Math.max(0, inner - 13)), t.add]]} bg={t.panel} />
+              )}
+            </Fragment>
           )
         })}
         {!tl.length && <Line parts={fit([["  no actions" + (s.filter ? " match" : " yet"), t.muted, DIM]], inner)} />}

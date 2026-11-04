@@ -1,8 +1,10 @@
 // Fake apps that emit actions, standing in for real connections until the bridge exists.
-import type { Action, Lib, Source, Store } from "./model"
+// Each store has a deterministic reducer, so dispatch, skip and revert behave like a real app.
+import type { Action, ActionInput, Lib, Source, Store } from "./model"
 
-type Step = { type: string; payload: unknown; next: (s: any) => any; at: string }
+type Step = ActionInput & { at: string }
 type Gen = (s: any) => Step | null
+type Reducer = (s: any, a: ActionInput) => any
 
 const products = [
   { id: 42, name: "Mechanical keyboard", price: 89.9 },
@@ -14,137 +16,105 @@ const pick = <T>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]!
 const round = (n: number) => Math.round(n * 100) / 100
 const total = (items: { price: number; qty: number }[]) => round(items.reduce((a, i) => a + i.price * i.qty, 0))
 
+const shopReduce: Reducer = (s, { type, payload: p }: { type: string; payload?: any }) => {
+  switch (type) {
+    case "user/login":
+      return { ...s, user: { id: p?.id ?? null, name: p?.name ?? null, loggedIn: true } }
+    case "cart/add": {
+      const found = s.cart.items.find((i: any) => i.id === p?.id)
+      const qty = Number(p?.qty ?? 1)
+      const price = products.find((x) => x.id === p?.id)?.price ?? 0
+      const items = found
+        ? s.cart.items.map((i: any) => (i.id === p.id ? { ...i, qty: i.qty + qty } : i))
+        : [...s.cart.items, { id: p?.id, qty, price }]
+      return { ...s, cart: { items, total: total(items) } }
+    }
+    case "cart/remove": {
+      const items = s.cart.items.filter((i: any) => i.id !== p?.id)
+      return { ...s, cart: { items, total: total(items) } }
+    }
+    case "products/fetch/pending":
+      return { ...s, ui: { ...s.ui, loading: true } }
+    case "products/fetch/fulfilled":
+      return { ...s, ui: { ...s.ui, loading: false } }
+    case "ui/openModal":
+      return { ...s, ui: { ...s.ui, modal: p?.name ?? "cart" } }
+    case "ui/closeModal":
+      return { ...s, ui: { ...s.ui, modal: null } }
+    case "checkout/start":
+      return { ...s, checkout: { step: "payment", total: s.cart.total } }
+  }
+  return s
+}
+
 const shopGen: Gen = (s) => {
   const r = Math.random()
-  if (!s.user.loggedIn)
-    return {
-      type: "user/login",
-      payload: { id: "u_81", name: "ada" },
-      at: "LoginForm.tsx:31:7",
-      next: (s) => ({ ...s, user: { id: "u_81", name: "ada", loggedIn: true } }),
-    }
-  if (r < 0.4) {
-    const p = pick(products)
-    return {
-      type: "cart/add",
-      payload: { id: p.id, qty: 1 },
-      at: "AddToCart.tsx:42:9",
-      next: (s) => {
-        const found = s.cart.items.find((i: any) => i.id === p.id)
-        const items = found
-          ? s.cart.items.map((i: any) => (i.id === p.id ? { ...i, qty: i.qty + 1 } : i))
-          : [...s.cart.items, { id: p.id, qty: 1, price: p.price }]
-        return { ...s, cart: { items, total: total(items) } }
-      },
-    }
-  }
-  if (r < 0.55 && s.cart.items.length) {
-    const it = pick<any>(s.cart.items)
-    return {
-      type: "cart/remove",
-      payload: { id: it.id },
-      at: "CartRow.tsx:18:5",
-      next: (s) => {
-        const items = s.cart.items.filter((i: any) => i.id !== it.id)
-        return { ...s, cart: { items, total: total(items) } }
-      },
-    }
-  }
-  if (r < 0.7)
-    return {
-      type: "products/fetch/pending",
-      payload: { page: 1 },
-      at: "useProducts.ts:12:3",
-      next: (s) => ({ ...s, ui: { ...s.ui, loading: true } }),
-    }
-  if (r < 0.8)
-    return {
-      type: "products/fetch/fulfilled",
-      payload: { count: products.length },
-      at: "useProducts.ts:15:5",
-      next: (s) => ({ ...s, ui: { ...s.ui, loading: false } }),
-    }
+  if (!s.user.loggedIn) return { type: "user/login", payload: { id: "u_81", name: "ada" }, at: "LoginForm.tsx:31:7" }
+  if (r < 0.4) return { type: "cart/add", payload: { id: pick(products).id, qty: 1 }, at: "AddToCart.tsx:42:9" }
+  if (r < 0.55 && s.cart.items.length)
+    return { type: "cart/remove", payload: { id: pick<any>(s.cart.items).id }, at: "CartRow.tsx:18:5" }
+  if (r < 0.7) return { type: "products/fetch/pending", payload: { page: 1 }, at: "useProducts.ts:12:3" }
+  if (r < 0.8) return { type: "products/fetch/fulfilled", payload: { count: products.length }, at: "useProducts.ts:15:5" }
   if (r < 0.9)
-    return {
-      type: s.ui.modal ? "ui/closeModal" : "ui/openModal",
-      payload: s.ui.modal ? null : { name: "cart" },
-      at: "Header.tsx:64:11",
-      next: (s) => ({ ...s, ui: { ...s.ui, modal: s.ui.modal ? null : "cart" } }),
-    }
+    return s.ui.modal
+      ? { type: "ui/closeModal", payload: null, at: "Header.tsx:64:11" }
+      : { type: "ui/openModal", payload: { name: "cart" }, at: "Header.tsx:64:11" }
   if (!s.cart.items.length) return null
-  return {
-    type: "checkout/start",
-    payload: { total: s.cart.total },
-    at: "Checkout.tsx:22:7",
-    next: (s) => ({ ...s, checkout: { step: "payment", total: s.cart.total } }),
-  }
+  return { type: "checkout/start", payload: { total: s.cart.total }, at: "Checkout.tsx:22:7" }
+}
+
+const prefsReduce: Reducer = (s, { type, payload: p }: { type: string; payload?: any }) => {
+  if (type === "setCurrency") return { ...s, currency: p?.currency ?? s.currency }
+  if (type === "toggleNotifications") return { ...s, notifications: !s.notifications }
+  return s
 }
 
 const prefsGen: Gen = (s) =>
   Math.random() < 0.5
-    ? {
-        type: "setCurrency",
-        payload: { currency: s.currency === "EUR" ? "USD" : "EUR" },
-        at: "CurrencyPicker.tsx:9:3",
-        next: (s) => ({ ...s, currency: s.currency === "EUR" ? "USD" : "EUR" }),
+    ? { type: "setCurrency", payload: { currency: s.currency === "EUR" ? "USD" : "EUR" }, at: "CurrencyPicker.tsx:9:3" }
+    : { type: "toggleNotifications", payload: undefined, at: "Settings.tsx:40:5" }
+
+const ordersReduce: Reducer = (s, { type, payload: p }: { type: string; payload?: any }) => {
+  switch (type) {
+    case "order/create":
+      return {
+        ...s,
+        orders: { byId: { ...s.orders.byId, [p?.id]: { status: "pending" } }, count: s.orders.count + 1 },
+        queue: { pending: s.queue.pending + 1 },
       }
-    : {
-        type: "toggleNotifications",
-        payload: undefined,
-        at: "Settings.tsx:40:5",
-        next: (s) => ({ ...s, notifications: !s.notifications }),
+    case "order/paid":
+      return {
+        ...s,
+        orders: { ...s.orders, byId: { ...s.orders.byId, [p?.id]: { status: "paid" } } },
+        queue: { pending: Math.max(0, s.queue.pending - 1) },
       }
+    case "cache/evict":
+      return { ...s, cache: { size: Math.max(0, (s.cache?.size ?? 64) - Number(p?.keys ?? 1)) } }
+  }
+  return s
+}
 
 let orderNo = 1000
 const ordersGen: Gen = (s) => {
   const r = Math.random()
   const ids = Object.keys(s.orders.byId)
-  if (r < 0.45 || !ids.length) {
-    const id = `ord_${++orderNo}`
-    return {
-      type: "order/create",
-      payload: { id, total: round(Math.random() * 200) },
-      at: "routes/orders.ts:57:12",
-      next: (s) => ({
-        ...s,
-        orders: { byId: { ...s.orders.byId, [id]: { status: "pending" } }, count: s.orders.count + 1 },
-        queue: { pending: s.queue.pending + 1 },
-      }),
-    }
-  }
-  if (r < 0.8) {
-    const id = pick(ids)
-    return {
-      type: "order/paid",
-      payload: { id },
-      at: "workers/payments.ts:88:7",
-      next: (s) => ({
-        ...s,
-        orders: { ...s.orders, byId: { ...s.orders.byId, [id]: { status: "paid" } } },
-        queue: { pending: Math.max(0, s.queue.pending - 1) },
-      }),
-    }
-  }
-  return {
-    type: "cache/evict",
-    payload: { keys: 3 },
-    at: "lib/cache.ts:120:3",
-    next: (s) => ({ ...s, cache: { size: Math.max(0, (s.cache?.size ?? 64) - 3) } }),
-  }
+  if (r < 0.45 || !ids.length)
+    return { type: "order/create", payload: { id: `ord_${++orderNo}`, total: round(Math.random() * 200) }, at: "routes/orders.ts:57:12" }
+  if (r < 0.8) return { type: "order/paid", payload: { id: pick(ids) }, at: "workers/payments.ts:88:7" }
+  return { type: "cache/evict", payload: { keys: 3 }, at: "lib/cache.ts:120:3" }
 }
+
+// Jotai-style: the action type is the atom and the payload its new value.
+const atomsReduce: Reducer = (s, { type, payload }) => (type in s ? { ...s, [type]: payload } : s)
 
 const atomsGen: Gen = (s) => {
   const r = Math.random()
-  if (r < 0.4) return { type: "pageAtom", payload: s.pageAtom + 1, at: "Pager.tsx:14:5", next: (s) => ({ ...s, pageAtom: s.pageAtom + 1 }) }
-  if (r < 0.7) {
-    const q = pick(["", "ad", "ada", "lin", "linus"])
-    return { type: "filterAtom", payload: q, at: "SearchBox.tsx:22:9", next: (s) => ({ ...s, filterAtom: q }) }
-  }
-  const u = pick(["u_81", "u_12", null])
-  return { type: "selectedUserAtom", payload: u, at: "UserTable.tsx:71:13", next: (s) => ({ ...s, selectedUserAtom: u }) }
+  if (r < 0.4) return { type: "pageAtom", payload: s.pageAtom + 1, at: "Pager.tsx:14:5" }
+  if (r < 0.7) return { type: "filterAtom", payload: pick(["", "ad", "ada", "lin", "linus"]), at: "SearchBox.tsx:22:9" }
+  return { type: "selectedUserAtom", payload: pick(["u_81", "u_12", null]), at: "UserTable.tsx:71:13" }
 }
 
-type Spec = { sourceId: string; lib: Lib; name: string; init: unknown; gen: Gen; every: [number, number] }
+type Spec = { sourceId: string; lib: Lib; name: string; init: unknown; gen: Gen; reduce: Reducer; every: [number, number] }
 
 const specs: Spec[] = [
   {
@@ -153,6 +123,7 @@ const specs: Spec[] = [
     name: "redux",
     init: { cart: { items: [], total: 0 }, user: { id: null, name: null, loggedIn: false }, ui: { modal: null, loading: false } },
     gen: shopGen,
+    reduce: shopReduce,
     every: [400, 2200],
   },
   {
@@ -161,6 +132,7 @@ const specs: Spec[] = [
     name: "prefs",
     init: { currency: "EUR", locale: "es-ES", notifications: true },
     gen: prefsGen,
+    reduce: prefsReduce,
     every: [3000, 9000],
   },
   {
@@ -169,6 +141,7 @@ const specs: Spec[] = [
     name: "orders",
     init: { orders: { byId: {}, count: 0 }, queue: { pending: 0 } },
     gen: ordersGen,
+    reduce: ordersReduce,
     every: [600, 3000],
   },
   {
@@ -177,12 +150,15 @@ const specs: Spec[] = [
     name: "atoms",
     init: { pageAtom: 1, filterAtom: "", selectedUserAtom: null },
     gen: atomsGen,
+    reduce: atomsReduce,
     every: [1500, 5000],
   },
 ]
 
 export const MAX_AGE = 500
 let actionId = 0
+
+const TRACE = ["at dispatch (redux/src/createStore.ts:271:7)", "at HTMLUnknownElement.callCallback (react-dom.js:3945)"]
 
 export function startMock(onChange: () => void, isPaused: () => boolean): Source[] {
   const sources: Source[] = ["shop-web", "api-node", "admin-panel"].map((id, i) => ({
@@ -195,43 +171,9 @@ export function startMock(onChange: () => void, isPaused: () => boolean): Source
   }))
   for (const spec of specs) {
     const src = sources.find((s) => s.id === spec.sourceId)!
-    const store: Store = { key: `${spec.sourceId}/${spec.name}`, sourceId: spec.sourceId, lib: spec.lib, name: spec.name, actions: [] }
-    src.stores.push(store)
-    let state = spec.init
-    let seq = 0
-    const push = (type: string, payload: unknown, next: unknown, at: string) => {
-      const a: Action = {
-        id: ++actionId,
-        seq: seq++,
-        storeKey: store.key,
-        type,
-        payload,
-        time: Date.now(),
-        prev: state,
-        state: next,
-        trace: [`at ${at}`, "at dispatch (redux/src/createStore.ts:271:7)", "at HTMLUnknownElement.callCallback (react-dom.js:3945)"],
-        skipped: false,
-      }
-      state = next
-      store.actions.push(a)
-      if (store.actions.length > MAX_AGE) store.actions.shift()
-    }
-    push("@@INIT", undefined, state, "store.ts:8:14")
-    const tick = () => {
-      if (src.connected && !isPaused()) {
-        const step = spec.gen(state)
-        if (step) {
-          push(step.type, step.payload, step.next(state), step.at)
-          onChange()
-        }
-      }
-      const [lo, hi] = spec.every
-      // Occasional bursts make the sparkline readable.
-      const burst = Math.random() < 0.15
-      setTimeout(tick, burst ? 120 : lo + Math.random() * (hi - lo))
-    }
-    setTimeout(tick, 300 + Math.random() * 1000)
+    src.stores.push(mockStore(spec, src, onChange, isPaused))
   }
+
   // admin-panel drops and comes back, to exercise the disconnected state.
   const admin = sources.find((s) => s.id === "admin-panel")!
   const flap = () => {
@@ -242,4 +184,101 @@ export function startMock(onChange: () => void, isPaused: () => boolean): Source
   }
   setTimeout(flap, 40000)
   return sources
+}
+
+// One fake app store: it owns its live state and history, like redux-devtools-instrument.
+function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () => boolean): Store {
+  const key = `${spec.sourceId}/${spec.name}`
+  let state = spec.init
+  let seq = 0
+
+  const record = (input: ActionInput, at: string, fromDevtools = false, silent = false) => {
+    const prev = state
+    state = spec.reduce(state, input)
+    // Paused recording: the app keeps running, openstate just does not log it.
+    if (isPaused() && !fromDevtools) return
+    const a: Action = {
+      id: ++actionId,
+      seq: seq++,
+      storeKey: key,
+      type: input.type,
+      payload: input.payload,
+      time: Date.now(),
+      prev,
+      state,
+      trace: [`at ${at}`, ...TRACE],
+      skipped: false,
+      fromDevtools,
+    }
+    store.actions.push(a)
+    if (store.actions.length > MAX_AGE) store.actions.shift()
+    if (!silent) onChange()
+  }
+
+  // Replay everything after the commit (or the oldest kept action), leaving skipped ones out.
+  const recompute = () => {
+    const acts = store.actions
+    const from = Math.max(1, acts.findIndex((a) => a.id === store.commitId) + 1)
+    let cur = acts[from - 1]?.state
+    for (let i = from; i < acts.length; i++) {
+      const a = acts[i]!
+      a.prev = cur
+      if (!a.skipped) cur = spec.reduce(cur, a)
+      a.state = cur
+    }
+    state = cur
+    onChange()
+  }
+  const base = () => Math.max(0, store.actions.findIndex((a) => a.id === store.commitId))
+
+  const store: Store = {
+    key,
+    sourceId: spec.sourceId,
+    lib: spec.lib,
+    name: spec.name,
+    actions: [],
+    commitId: null,
+    locked: false,
+    conn: {
+      dispatch: (a) => record(a, "openstate dispatch", true),
+      toggle: (id) => {
+        const a = store.actions.find((x) => x.id === id)
+        if (!a) return
+        a.skipped = !a.skipped
+        recompute()
+      },
+      commit: (id) => {
+        store.commitId = id
+        onChange()
+      },
+      revert: () => {
+        store.actions.splice(base() + 1)
+        state = store.actions[store.actions.length - 1]?.state ?? spec.init
+        onChange()
+      },
+      sweep: () => {
+        store.actions = store.actions.filter((a) => !a.skipped)
+        onChange()
+      },
+      lock: (on) => {
+        store.locked = on
+        onChange()
+      },
+    },
+  }
+
+  // Silent: openstate is still being constructed and reads the history when it is done.
+  record({ type: "@@INIT" }, "store.ts:8:14", false, true)
+  const tick = () => {
+    if (src.connected && !store.locked) {
+      const step = spec.gen(state)
+      if (step) record(step, step.at)
+    }
+    const [lo, hi] = spec.every
+    // Occasional bursts make the activity track readable.
+    const burst = Math.random() < 0.15
+    setTimeout(tick, burst ? 120 : lo + Math.random() * (hi - lo))
+  }
+  setTimeout(tick, 300 + Math.random() * 1000)
+  return store
 }

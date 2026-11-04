@@ -15,12 +15,13 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
 
 - `src/main.tsx` — renderer, keymap setup (ex commands, leader `g`), React root
 - `src/state.ts` — `AppState`: single mutable store; UI subscribes via `useApp()`, mutations call `emit()`
-- `src/model.ts` — data types, structural diff, tree flattening
-- `src/mock.ts` — fake apps and action generators
+- `src/model.ts` — data types, structural diff, tree flattening, and `StoreConn`: the commands openstate sends to an
+  app (dispatch, skip, commit, revert, sweep, lock). The app owns history and recomputes states, as in Redux DevTools
+- `src/mock.ts` — fake apps with deterministic reducers implementing `StoreConn`; the real bridge must match it
 - `src/theme.ts` — theme tokens; never hardcode colours in components
 - `src/ui/keys.ts` — every keybinding, also feeds the help overlay and status hints
 - `src/ui/kit.tsx` — `Line`/`Part` rendering helpers (`fit`, `spread`), syntax styles
-- `src/ui/*.tsx` — Header/Track (top), panels, inspector, status bar, overlays
+- `src/ui/*.tsx` — Header/Track (top), panels, inspector, statusline + command line (`Bottom`), dispatch card, overlays
 
 ## Conventions
 

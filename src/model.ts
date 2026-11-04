@@ -11,6 +11,26 @@ export type Action = {
   state: unknown
   trace: string[]
   skipped: boolean
+  // Dispatched from openstate instead of by the app itself.
+  fromDevtools?: boolean
+}
+
+export type ActionInput = { type: string; payload?: unknown }
+
+// What openstate can ask a connected store to do. It mirrors Redux DevTools' lifted
+// actions: the app owns the history and recomputes states after each change.
+export interface StoreConn {
+  dispatch(action: ActionInput): void
+  // Skip or restore an action; later states are recomputed without it.
+  toggle(id: number): void
+  // That action's state becomes the base revert returns to; null resets to the initial state.
+  commit(id: number | null): void
+  // Drop every action after the commit (or after init) and restore that state.
+  revert(): void
+  // Remove skipped actions for good.
+  sweep(): void
+  // While locked the app's own dispatches are ignored.
+  lock(on: boolean): void
 }
 
 export type Store = {
@@ -19,6 +39,10 @@ export type Store = {
   lib: Lib
   name: string
   actions: Action[]
+  // Id of the last committed action; revert returns to its state.
+  commitId: number | null
+  locked: boolean
+  conn: StoreConn
 }
 
 export type Source = {
@@ -36,12 +60,14 @@ export type Change = { path: string; before: unknown; after: unknown }
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null
 
-const changeCache = new WeakMap<Action, number>()
+const changeCache = new WeakMap<Action, { prev: unknown; state: unknown; n: number }>()
 
-// Number of leaf changes an action made; actions are immutable, so it is cached.
+// Number of leaf changes an action made. Cached until skip or revert recomputes its states.
 export function changeCount(a: Action): number {
-  let n = changeCache.get(a)
-  if (n === undefined) changeCache.set(a, (n = diff(a.prev, a.state).length))
+  const c = changeCache.get(a)
+  if (c && c.prev === a.prev && c.state === a.state) return c.n
+  const n = diff(a.prev, a.state).length
+  changeCache.set(a, { prev: a.prev, state: a.state, n })
   return n
 }
 
