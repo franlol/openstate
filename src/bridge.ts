@@ -361,6 +361,8 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
       const staged = l.lifted?.stagedActionIds.length ?? 0
       if (m.isExcess) l.cap ??= staged - 1
       if (l.cap !== undefined && staged > l.cap) dropOldest(st, l)
+      // The app never says its maxAge; once it is full, the list length is it.
+      if (m.isExcess) st.limit ??= st.actions.length
     }
   }
 

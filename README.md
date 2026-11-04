@@ -30,7 +30,8 @@ const store = createStore(reducer, composeWithDevTools({ name: "mobile app", rea
 ```
 
 Everything in the Redux column below works. Two things stay in the app's hands: how many actions it keeps (`maxAge` in
-those options, 30 by default; `:set maxage` does not reach it), and how soon it reconnects after openstate restarts
+those options, 30 by default; `:set maxage` does not reach it, and the action list shows `30/30` once the app starts
+dropping its oldest), and how soon it reconnects after openstate restarts
 (the remote client waits up to 30 s).
 
 ### Any other app
@@ -89,7 +90,7 @@ change is saved at once. From the command line:
 
 | Option   | Values                                | Default     | What it does                                        |
 | -------- | ------------------------------------- | ----------- | --------------------------------------------------- |
-| `maxage` | 10–5000                               | 500         | actions kept per store; older ones drop as new ones arrive |
+| `maxage` | 10–5000                               | 500         | actions kept per store; older ones drop as new ones arrive. The action list shows how full it is (`120/500`) |
 | `time`   | `clock` \| `delta`                    | `clock`     | time column of the action list: `14:39:15`, or time since the previous action (`+1.20s`) |
 | `flash`  | on / off                              | on          | rows and values light up as actions arrive          |
 | `port`   | 1024–65535                            | 8000        | where openstate listens; tell the client with `OPENSTATE_URL` or `install({ url })` |

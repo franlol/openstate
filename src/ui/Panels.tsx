@@ -166,6 +166,9 @@ export function Actions({ width }: { width: number }) {
   const visible = tl.slice(from, from + WINDOW)
   const locked = s.target()?.locked ? " · ◆ locked" : ""
   const hidden = s.view().hidden.size
+  // `12/500`: how full the store is. Remote apps keep their own limit, known once they first drop an action.
+  const st = s.merge ? undefined : s.store()
+  const limit = st && tl.length === st.actions.length ? (st.limit ?? (st.lib === "remote" ? undefined : s.settings.maxage)) : undefined
   const delta = s.settings.time === "delta"
   const moved = s.merge ? 0 : s.movedCount(s.activeKey)
   // While a moved action is selected, a ghost row marks the slot it came from.
@@ -199,7 +202,7 @@ export function Actions({ width }: { width: number }) {
     <Panel
       id="actions"
       title={title}
-      bottomTitle={(moved ? ` ${moved} moved ·` : "") + (hidden ? ` ${hidden} hidden ·` : "") + ` ${tl.length} `}
+      bottomTitle={(moved ? ` ${moved} moved ·` : "") + (hidden ? ` ${hidden} hidden ·` : "") + ` ${tl.length}${limit ? `/${limit}` : ""} `}
       width={width}
     >
       <scrollbox ref={ref} flexGrow={1} stickyScroll stickyStart="bottom" scrollbarOptions={scrollbar(t)}>

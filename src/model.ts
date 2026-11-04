@@ -58,6 +58,8 @@ export type Store = {
   // Id of the last committed action; revert returns to its state.
   commitId: number | null
   locked: boolean
+  // Actions the app keeps when it sets its own limit (Redux DevTools remote); otherwise `:set maxage`.
+  limit?: number
   conn: StoreConn
 }
 
