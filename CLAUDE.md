@@ -42,6 +42,7 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
   `<g>` leader (plain `gt` parses as the `>` key, `G` as `g`; write `shift+g`).
 - Terminal-dense layout: no gaps between panels, no decorative padding.
 - Bridge changes need a real app: a script that imports `client/index.ts` first and uses redux / zustand, pointed at
-  openstate with `OPENSTATE_URL`. Quit openstate with `q` before killing tmux, or the process outlives the session.
+  openstate with `OPENSTATE_URL`. Closing tmux ends openstate too
+  (any way the renderer is destroyed exits the process, `src/main.tsx`).
 - Verify UI changes by running the app in tmux (`tmux new-session -d -s os -x 120 -y 30 "bun src/main.tsx"`, then
   `send-keys` and `capture-pane -p`). Mouse can be simulated with SGR sequences, e.g. `send-keys -l $'\e[<0;10;5M'`.

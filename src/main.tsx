@@ -35,10 +35,12 @@ state.copyText = async (text) => {
   const r = await clipboard.writeText(text, { destination: "best-available" })
   return [r.host, r.terminal].some((x) => x?.status === "written")
 }
-state.onQuit = () => {
-  renderer.destroy()
-  process.exit(0)
-}
+// q, Ctrl+C, a closed terminal and SIGTERM all destroy the renderer; the WebSocket server would keep the
+// process alive without a screen, so exit once the terminal is restored.
+state.onQuit = () => renderer.destroy()
+renderer.once("destroy", () => {
+  renderer.closed.finally(() => process.exit(0))
+})
 
 // Every palette command is also an ex command, so `:theme nord` resolves through the keymap.
 keymap.registerLayer({
