@@ -1,6 +1,6 @@
 // Fake apps that emit actions, standing in for real connections until the bridge exists.
 // Each store has a deterministic reducer, so dispatch, skip and revert behave like a real app.
-import type { Action, ActionInput, Lib, Source, Store } from "./model"
+import type { Action, ActionInput, History, Lib, Source, Store } from "./model"
 
 type Step = ActionInput & { at: string }
 type Gen = (s: any) => Step | null
@@ -263,6 +263,31 @@ function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () =
       lock: (on) => {
         store.locked = on
         onChange()
+      },
+      import: (h: History) => {
+        seq = 0
+        store.commitId = null
+        store.actions = h.actions.map((x) => ({
+          id: ++actionId,
+          seq: seq++,
+          storeKey: key,
+          type: x.type,
+          payload: x.payload,
+          time: x.time,
+          prev: undefined,
+          state: x.state,
+          trace: x.trace,
+          skipped: x.skipped,
+        }))
+        store.actions.forEach((a, i) => (a.prev = i ? store.actions[i - 1]!.state : a.state))
+        state = store.actions[store.actions.length - 1]!.state
+        // Without saved states the reducer rebuilds them from the first one.
+        if (!h.hasStates) {
+          const first = store.actions[0]!
+          first.state ??= spec.init
+          first.prev = first.state
+          recompute()
+        } else onChange()
       },
     },
   }

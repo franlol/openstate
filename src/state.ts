@@ -1,4 +1,7 @@
 import { diff, flatten, getPath, type Action, type Change, type Source, type Store, type TreeRow } from "./model"
+import { homedir } from "node:os"
+import { resolve } from "node:path"
+import { exportHistory, importHistory } from "./history"
 import { startMock } from "./mock"
 import { findTheme, themes, type Theme } from "./theme"
 
@@ -42,6 +45,8 @@ export const commands: Command[] = [
   { name: "unhide", desc: "show hidden action types again", run: (s) => s.unhideAll() },
   { name: "pin", desc: "pin / unpin the subtree under the cursor", run: (s) => s.togglePin() },
   { name: "play", desc: "play / pause actions from the cursor", run: (s) => s.togglePlay() },
+  { name: "export", desc: "save history as Redux DevTools JSON", run: (s, arg) => void s.exportTo(arg) },
+  { name: "import", desc: "load a Redux DevTools history file", run: (s, arg) => void s.importFrom(arg) },
   { name: "help", desc: "show keybindings", run: (s) => (s.help = true) },
   { name: "quit", desc: "exit openstate", run: (s) => s.quit() },
 ]
@@ -463,6 +468,49 @@ export class AppState {
     })
   }
 
+  // --- import / export ------------------------------------------------------------
+  async exportTo(arg: string) {
+    const st = this.target()
+    if (!st) return
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
+    const path = filePath(arg || `openstate-${st.sourceId}-${st.name}-${stamp}.json`)
+    try {
+      await Bun.write(path, exportHistory(st))
+      this.notify(`"${shortPath(path)}" written · ${st.actions.length} actions of ${st.name}`)
+    } catch (e) {
+      this.notify(`E: cannot write ${shortPath(path)}: ${(e as Error).message}`, true)
+    }
+    this.emit()
+  }
+  // Without a file name, the newest export in the working directory.
+  async importFrom(arg: string) {
+    const st = this.target()
+    if (!st) return
+    const path = arg ? filePath(arg) : await newestExport()
+    if (!path) return this.notify("E: no openstate-*.json here · :import <file>", true), this.emit()
+    let h
+    try {
+      const f = Bun.file(path)
+      if (!(await f.exists())) throw new Error("no such file")
+      h = importHistory(await f.text())
+    } catch (e) {
+      this.notify(`E: ${shortPath(path)}: ${(e as Error).message}`, true)
+      return this.emit()
+    }
+    const n = h.actions.length
+    this.ask(`replace ${st.actions.length} actions of ${st.name} with ${n} from ${shortPath(path)}?`, () => {
+      this.stopPlay()
+      // The app renumbers from zero; nothing here is new, so nothing flashes.
+      this.lastSeen.set(st.key, n)
+      st.conn.import(h)
+      const v = this.view(st.key)
+      v.cursor = null
+      v.trackFrom = null
+      this.notify(`imported ${n} actions into ${st.name}${h.hasStates ? "" : " · states replayed"}`)
+    })
+    this.emit()
+  }
+
   // --- hide -------------------------------------------------------------------
   hideType(type?: string) {
     const t = type ?? this.selected()?.type
@@ -659,6 +707,15 @@ export class AppState {
 }
 
 const json = (v: unknown) => JSON.stringify(v ?? null, null, 2)
+
+const filePath = (p: string) => resolve(p.replace(/^~(?=\/|$)/, homedir()))
+const shortPath = (p: string) => p.replace(process.cwd() + "/", "").replace(homedir(), "~")
+
+async function newestExport(): Promise<string | undefined> {
+  const files = [...new Bun.Glob("openstate-*.json").scanSync({ cwd: process.cwd(), absolute: true })]
+  const dated = await Promise.all(files.map(async (f) => ({ f, t: (await Bun.file(f).stat()).mtimeMs })))
+  return dated.sort((a, b) => b.t - a.t)[0]?.f
+}
 
 export function fuzzy(q: string, s: string): boolean {
   let i = 0

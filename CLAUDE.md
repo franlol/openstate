@@ -17,6 +17,7 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
 - `src/state.ts` — `AppState`: single mutable store; UI subscribes via `useApp()`, mutations call `emit()`
 - `src/model.ts` — data types, structural diff, tree flattening, and `StoreConn`: the commands openstate sends to an
   app (dispatch, skip, commit, revert, sweep, lock). The app owns history and recomputes states, as in Redux DevTools
+- `src/history.ts` — `:export` / `:import` in Redux DevTools' file format (lifted state inside `payload`)
 - `src/mock.ts` — fake apps with deterministic reducers implementing `StoreConn`; the real bridge must match it
 - `src/theme.ts` — theme tokens; never hardcode colours in components
 - `src/ui/keys.ts` — every keybinding, also feeds the help overlay and status hints

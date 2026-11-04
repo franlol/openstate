@@ -17,6 +17,12 @@ export type Action = {
 
 export type ActionInput = { type: string; payload?: unknown }
 
+// A history loaded from a file. States are kept when the file has one per action; otherwise the app replays them.
+export type History = {
+  actions: (ActionInput & { time: number; trace: string[]; skipped: boolean; state: unknown })[]
+  hasStates: boolean
+}
+
 // What openstate can ask a connected store to do. It mirrors Redux DevTools' lifted
 // actions: the app owns the history and recomputes states after each change.
 export interface StoreConn {
@@ -31,6 +37,8 @@ export interface StoreConn {
   sweep(): void
   // While locked the app's own dispatches are ignored.
   lock(on: boolean): void
+  // Replace the whole history, like the extension's import.
+  import(history: History): void
 }
 
 export type Store = {

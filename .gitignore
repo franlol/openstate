@@ -36,3 +36,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # agent skills, reinstalled from skills-lock.json
 .agents/
 .claude/skills/
+openstate-*.json
