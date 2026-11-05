@@ -6,7 +6,7 @@ open at once. Built with [OpenTUI](https://opentui.com).
 ## Run
 
 ```bash
-npm i -g @openstate/cli          # or: curl -fsSL https://raw.githubusercontent.com/franlol/openstate/main/install.sh | sh
+npm i -g @openstate-devtools/cli          # or: curl -fsSL https://raw.githubusercontent.com/franlol/openstate/main/install.sh | sh
 openstate                        # waits for apps on ws://localhost:8000
 openstate --demo                 # three sample apps instead, no app needed
 ```
@@ -56,20 +56,20 @@ dropping its oldest), and how soon it reconnects after openstate restarts
 Add the client to the app:
 
 ```bash
-npm i -D @openstate/client
+npm i -D @openstate-devtools/client
 ```
 
 Make it the **first import** of the app, before any store library:
 
 ```ts
-import "@openstate/client"
+import "@openstate-devtools/client"
 ```
 
 An app that runs in Node or Bun can load it without a change to its code:
 
 ```bash
-node --import @openstate/client server.js
-bun --preload @openstate/client server.ts
+node --import @openstate-devtools/client server.js
+bun --preload @openstate-devtools/client server.ts
 ```
 
 It stands in for the Redux DevTools browser extension (`window.__REDUX_DEVTOOLS_EXTENSION__`), so these report to
@@ -84,7 +84,7 @@ defines `window` as `globalThis` so the libraries find it. The app shows up in t
 or script name; it reconnects by itself if openstate starts later or restarts.
 
 ```ts
-import { install } from "@openstate/client"
+import { install } from "@openstate-devtools/client"
 install({ name: "checkout", url: "ws://localhost:8123" }) // or OPENSTATE_URL=ws://localhost:8123 in the environment
 ```
 
@@ -97,7 +97,7 @@ Nothing beyond the above. Put the import at the top of the file that creates the
 provider, or the zustand store module):
 
 ```ts
-import "@openstate/client"
+import "@openstate-devtools/client"
 import { configureStore } from "@reduxjs/toolkit"
 ```
 
@@ -167,8 +167,8 @@ OPENSTATE_DEBUG=debug.log bun run start      # logs how each key was dispatched
 ```
 
 `bun run release` builds what a release publishes into `release/`: a binary per platform, as npm packages
-(`@openstate/cli-<os>-<cpu>`, picked by the `@openstate/cli` launcher) and as archives for GitHub Releases and
-`install.sh` (with their `SHA256SUMS`, which `install.sh` checks), plus `@openstate/client`. It needs OpenTUI's native packages for every platform:
+(`@openstate-devtools/cli-<os>-<cpu>`, picked by the `@openstate-devtools/cli` launcher) and as archives for GitHub Releases and
+`install.sh` (with their `SHA256SUMS`, which `install.sh` checks), plus `@openstate-devtools/client`. It needs OpenTUI's native packages for every platform:
 `bun install --os="*" --cpu="*"`.
 
 The OpenTUI agent skill is not committed; reinstall it with `bunx skills add https://opentui.com --skill opentui`.

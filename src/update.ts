@@ -4,7 +4,7 @@ import pkg from "../package.json" with { type: "json" }
 
 export const VERSION: string = pkg.version
 // The package openstate is installed from; the repository's own package.json is only for working on it.
-export const PACKAGE = "@openstate/cli"
+export const PACKAGE = "@openstate-devtools/cli"
 export const INSTALL_SCRIPT = "https://raw.githubusercontent.com/franlol/openstate/main/install.sh"
 // A `bun build --compile` binary, as published; its own code lives in Bun's embedded file system.
 export const COMPILED = import.meta.dir.includes("$bunfs") || import.meta.dir.includes("~BUN")

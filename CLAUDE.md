@@ -11,13 +11,13 @@ Apps connect through `client/` (a stand-in for the Redux DevTools extension) to 
   `dev` keeps the development build, several times slower
 - `bun run typecheck` and `bun test` — must pass before finishing a change. `test/setup.ts` points the config at a
   temporary folder; `test/bridge.test.ts` runs the real client against the bridge
-- `bun run build` — compiles `@openstate/client` to `dist/client` (JS + types) for bundlers such as Next, which do not
+- `bun run build` — compiles `@openstate-devtools/client` to `dist/client` (JS + types) for bundlers such as Next, which do not
   compile TypeScript from `node_modules`; Bun imports `client/index.ts` directly. `--env disable` keeps
   `process.env.NODE_ENV` for the app's bundler to replace instead of Bun's own value
 - `OPENSTATE_DEBUG=debug.log bun run start` — logs keymap warnings/errors and how each key was dispatched
 - `bun run release` — `scripts/release.ts` builds `release/`: a `bun build --compile` binary per platform as npm
-  packages (`@openstate/cli-<os>-<cpu>`, run by the `npm/cli/openstate.js` launcher of `@openstate/cli`), the same
-  binaries as archives for GitHub Releases and `install.sh`, and `@openstate/client`. Publishes nothing
+  packages (`@openstate-devtools/cli-<os>-<cpu>`, run by the `npm/cli/openstate.js` launcher of `@openstate-devtools/cli`), the same
+  binaries as archives for GitHub Releases and `install.sh`, and `@openstate-devtools/client`. Publishes nothing
 
 Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with built-in `WebSocket`).
 
@@ -28,11 +28,11 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
 - `src/model.ts` — data types, structural diff, tree flattening, and `StoreConn`: the commands openstate sends to an
   app (dispatch, skip, commit, revert, sweep, lock). The app owns history and recomputes states, as in Redux DevTools
 - `src/history.ts` — `:export` / `:import` in Redux DevTools' file format (lifted state inside `payload`)
-- `src/bridge.ts` — WebSocket server (`:set port`). Speaks @openstate/client's protocol and Redux DevTools remote
+- `src/bridge.ts` — WebSocket server (`:set port`). Speaks @openstate-devtools/client's protocol and Redux DevTools remote
   (SocketCluster frames, jsan payloads), told apart by the first frame. Redux stores mirror the app's lifted state and send lifted actions back;
   `connect()` stores (zustand…) keep their history here and throw for what needs a reducer (skip, reorder, lock).
   Pages from another origin are held until allowed (`Access` in `src/model.ts`, saved to the `origins` file)
-- `client/` — `@openstate/client`: installs `__REDUX_DEVTOOLS_EXTENSION__`/`_COMPOSE__`, built on `@redux-devtools/instrument`;
+- `client/` — `@openstate-devtools/client`: installs `__REDUX_DEVTOOLS_EXTENSION__`/`_COMPOSE__`, built on `@redux-devtools/instrument`;
   `client/protocol.ts` holds the messages both sides speak (`PROTOCOL` is their version). The client batches
   messages every 50 ms, and a client too far behind sends each store's init again instead
 - `src/mock.ts` — fake apps with deterministic reducers implementing `StoreConn`; the real bridge must match it

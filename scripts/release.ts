@@ -1,7 +1,7 @@
 // Builds everything a release publishes into release/:
 //   npm/cli-<os>-<cpu>/      one package per platform, holding the compiled binary
-//   npm/cli/                 @openstate/cli, the launcher that picks the binary for the machine
-//   npm/client/              @openstate/client, compiled for bundlers and Node
+//   npm/cli/                 @openstate-devtools/cli, the launcher that picks the binary for the machine
+//   npm/client/              @openstate-devtools/client, compiled for bundlers and Node
 //   openstate-<os>-<cpu>.tar.gz   the same binaries for GitHub Releases and install.sh
 //   SHA256SUMS               their checksums, which install.sh checks
 // Run with `bun run release`; it publishes nothing. The native OpenTUI packages for every target must be installed:
@@ -51,7 +51,7 @@ for (const t of TARGETS) {
   if (!built.success) throw new AggregateError(built.logs, `build for ${name} failed`)
   chmodSync(join(dir, "bin", exe), 0o755)
   json(join(dir, "package.json"), {
-    name: `@openstate/${name}`,
+    name: `@openstate-devtools/${name}`,
     ...common,
     description: `openstate for ${t.os} ${t.cpu}`,
     os: [t.os],
@@ -74,13 +74,13 @@ cpSync("npm/cli/openstate.js", join(cli, "openstate.js"))
 cpSync("README.md", join(cli, "README.md"))
 cpSync("LICENSE", join(cli, "LICENSE"))
 json(join(cli, "package.json"), {
-  name: "@openstate/cli",
+  name: "@openstate-devtools/cli",
   ...common,
   description: root.description,
   type: "module",
   bin: { openstate: "openstate.js" },
   files: ["openstate.js"],
-  optionalDependencies: Object.fromEntries(TARGETS.map((t) => [`@openstate/cli-${t.os}-${t.cpu}`, version])),
+  optionalDependencies: Object.fromEntries(TARGETS.map((t) => [`@openstate-devtools/cli-${t.os}-${t.cpu}`, version])),
 })
 
 // The client: plain JS and types, for bundlers, Node's --import and Bun's --preload alike.
@@ -89,7 +89,7 @@ await $`bun build client/index.ts --outdir ${join(client, "dist")} --packages ex
 await $`bunx tsc -p tsconfig.client.json --outDir ${join(client, "dist")}`
 cpSync("LICENSE", join(client, "LICENSE"))
 json(join(client, "package.json"), {
-  name: "@openstate/client",
+  name: "@openstate-devtools/client",
   ...common,
   description: "Connects an app's Redux, zustand or jotai stores to openstate",
   type: "module",

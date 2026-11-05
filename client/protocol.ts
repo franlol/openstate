@@ -1,4 +1,4 @@
-// Messages between an app (through @openstate/client) and openstate, as JSON: one object per WebSocket frame,
+// Messages between an app (through @openstate-devtools/client) and openstate, as JSON: one object per WebSocket frame,
 // or an array of them when the client sends a batch. Redux stores send Redux DevTools' lifted state and take
 // lifted actions back, so the app keeps the history and recomputes; other stores report action + state, and
 // keep a short history of their own so a reconnect loses nothing.

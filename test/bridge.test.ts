@@ -1,4 +1,4 @@
-// The bridge against real clients: @openstate/client with redux and a connect() store, a Redux DevTools remote
+// The bridge against real clients: @openstate-devtools/client with redux and a connect() store, a Redux DevTools remote
 // app, pages from other origins.
 import { afterAll, describe, expect, test } from "bun:test"
 import { networkInterfaces } from "node:os"

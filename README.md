@@ -13,7 +13,7 @@
 ## Install
 
 ```sh
-npm i -g @openstate/cli
+npm i -g @openstate-devtools/cli
 ```
 
 or
@@ -32,10 +32,10 @@ Your app needs just one of these, depending on where it runs:
 | Your app | Do this |
 | --- | --- |
 | Already uses Redux DevTools remote | Nothing, it connects on its own |
-| Runs in the browser | Add `import "@openstate/client"` as its first import |
-| Runs in Node or Bun | Start it with `node --import @openstate/client app.js`<br>or `bun --preload @openstate/client app.ts` |
+| Runs in the browser | Add `import "@openstate-devtools/client"` as its first import |
+| Runs in Node or Bun | Start it with `node --import @openstate-devtools/client app.js`<br>or `bun --preload @openstate-devtools/client app.ts` |
 
-The last two need the client in the project: `npm i -D @openstate/client`
+The last two need the client in the project: `npm i -D @openstate-devtools/client`
 
 ## What you get
 

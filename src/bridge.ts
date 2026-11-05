@@ -1,4 +1,4 @@
-// The bridge to real apps: a WebSocket server that @openstate/client connects to, and that also speaks the
+// The bridge to real apps: a WebSocket server that @openstate-devtools/client connects to, and that also speaks the
 // Redux DevTools remote protocol (SocketCluster), so apps set up for remote devtools connect unchanged.
 // Each connection is a source; each store it reports is a Store whose StoreConn talks back over the socket.
 import type { Server, ServerWebSocket } from "bun"
@@ -21,7 +21,7 @@ type Conn = {
   // A blocked page: kept connected, so its client does not keep retrying, and its frames kept like a waiting
   // page's (up to HELD_MAX) in case it is let in after all.
   parked?: boolean
-  // Decided by the first frame: @openstate/client says hello, a remote devtools client starts a SocketCluster handshake.
+  // Decided by the first frame: @openstate-devtools/client says hello, a remote devtools client starts a SocketCluster handshake.
   proto?: "openstate" | "remote"
   // The app's start, from its hello.
   run?: string
@@ -104,7 +104,7 @@ export function startBridge(opts: {
       for (const ws of socketsOf(origin)) {
         if (!waiting(ws)) continue
         // Those waiting or blocked get in with what they have sent so far. One that sent more than was kept is
-        // asked to reconnect and start over instead; @openstate/client does so at once.
+        // asked to reconnect and start over instead; @openstate-devtools/client does so at once.
         const { held, overflow } = ws.data
         Object.assign(ws.data, { held: undefined, heldBytes: undefined, parked: undefined, overflow: undefined })
         if (overflow) ws.close(1012, "allowed in openstate, reconnect")
@@ -167,7 +167,7 @@ export function startBridge(opts: {
 
   const sendTo = (ws: Socket, m: ServerMessage) => ws.send(JSON.stringify(m))
   const lifted = (st: Store, action: LiftedAction) => links.get(st)!.out.lifted(action)
-  // @openstate/client: the instance id says which store of the app.
+  // @openstate-devtools/client: the instance id says which store of the app.
   const clientOut = (l: Link): Link["out"] => ({
     lifted: (action) => sendTo(l.ws, { t: "lifted", id: l.instanceId, action }),
     dispatch: (action) => sendTo(l.ws, { t: "dispatch", id: l.instanceId, action }),
@@ -551,7 +551,7 @@ export function startBridge(opts: {
           // Another device has no page to name it by; it is asked about by its address.
           const device = ip && !isLoopback(ip) ? `tcp://${ip.includes(":") ? `[${ip}]` : ip}` : undefined
           if (srv.upgrade(req, { data: { source: null, origin: req.headers.get("origin") ?? device } })) return
-          return new Response("openstate: connect with @openstate/client over WebSocket\n", { status: 426 })
+          return new Response("openstate: connect with @openstate-devtools/client over WebSocket\n", { status: 426 })
         },
         websocket: {
           open(ws: Socket) {

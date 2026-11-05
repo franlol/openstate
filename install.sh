@@ -11,7 +11,7 @@ dir="${OPENSTATE_INSTALL:-$HOME/.local/bin}"
 case "$(uname -s)" in
   Linux) os=linux ;;
   Darwin) os=darwin ;;
-  *) echo "openstate: no build for $(uname -s); on Windows use: npm i -g @openstate/cli" >&2; exit 1 ;;
+  *) echo "openstate: no build for $(uname -s); on Windows use: npm i -g @openstate-devtools/cli" >&2; exit 1 ;;
 esac
 case "$(uname -m)" in
   x86_64 | amd64) cpu=x64 ;;

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // `openstate` as installed by npm: runs the binary for this machine, which npm installed as the matching
-// @openstate/cli-<os>-<cpu> optional dependency. The binary carries its own runtime, so this is all Node does.
+// @openstate-devtools/cli-<os>-<cpu> optional dependency. The binary carries its own runtime, so this is all Node does.
 import { spawnSync } from "node:child_process"
 import { createRequire } from "node:module"
 
 const require = createRequire(import.meta.url)
-const name = `@openstate/cli-${process.platform}-${process.arch}`
+const name = `@openstate-devtools/cli-${process.platform}-${process.arch}`
 const exe = process.platform === "win32" ? "openstate.exe" : "openstate"
 
 let bin

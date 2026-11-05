@@ -1,6 +1,6 @@
 // openstate client: stands in for the Redux DevTools browser extension and reports to openstate instead.
 //
-//   import "@openstate/client"   // first import of the app, before any store library
+//   import "@openstate-devtools/client"   // first import of the app, before any store library
 //
 // Redux Toolkit's configureStore, redux's __REDUX_DEVTOOLS_EXTENSION_COMPOSE__, zustand's `devtools`
 // middleware and jotai-devtools then connect without changes. Configure with install({ url, name }).
@@ -125,7 +125,7 @@ function connect() {
       config.maxAge = m.maxAge
       if (m.v !== PROTOCOL && !warned) {
         warned = true
-        console.warn(`[openstate] openstate speaks protocol ${m.v ?? 0}, this @openstate/client ${PROTOCOL}; update the older one`)
+        console.warn(`[openstate] openstate speaks protocol ${m.v ?? 0}, this @openstate-devtools/client ${PROTOCOL}; update the older one`)
       }
     } else instances.get(m.id)?.onServer(m)
   }
