@@ -181,7 +181,7 @@ export function Sources({ width }: { width: number }) {
               [active ? "▌" : " ", t.accent],
               ["  ", t.dim],
               [r.store.name, active ? t.fg : t.muted, active ? BOLD : undefined],
-              [r.store.lib === r.store.name ? "" : ` ${r.store.lib}`, t.dim],
+              [` ${r.store.lib}`, t.dim],
             ],
             [[unseen ? `+${unseen} ` : `${r.store.actions.length} `, unseen ? t.warn : t.dim]],
             inner,
