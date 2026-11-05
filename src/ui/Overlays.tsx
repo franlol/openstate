@@ -1,5 +1,5 @@
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
-import { Fragment, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { homedir } from "node:os"
 import { CONFIG_PATH, DEFAULTS, format, OPTIONS, show } from "../settings"
 import { REPO_URL, SHINE_MS } from "../state"
@@ -7,25 +7,74 @@ import { updateCommand, VERSION } from "../update"
 import { mix, shineGlow, themes, titleShades } from "../theme"
 import { BOLD, fit, Footer, Hints, Line, scrollbar, spread, useApp, type Hint, type Part } from "./kit"
 import { globalBinds, keyLabel, panelBinds, type Bind } from "./keys"
+import { WORDMARK, type Wordmark } from "./wordmark"
 
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-// A font's two colours: the fill, and its shadow (the block font's ╗═ edges) sunk halfway into the background.
-const shaded = (fill: string, bg: string) => [fill, mix(fill, bg, 0.5)]
+// The dots of a braille cell: [column, row, bit].
+const BRAILLE_DOTS = [[0, 0, 1], [0, 1, 2], [0, 2, 4], [1, 0, 8], [1, 1, 16], [1, 2, 32], [0, 3, 64], [1, 3, 128]] as const
 
-// The name in large letters, its halves in the header's two shades. Drawn a letter at a time (the font's one-cell
-// gap between letters added back), so a shine centred on letter `at` can run across it.
-function Logo({ font, bg, at = -Infinity }: { font: "block" | "tiny"; bg: string; at?: number }) {
+// The wordmark as a dot grid, so earlier copies of it can be drawn shifted.
+function dotGrid(mark: Wordmark): (x: number, y: number) => boolean {
+  const w = mark.rows[0]!.length * 2
+  const h = mark.rows.length * 4
+  const grid = new Uint8Array(w * h)
+  mark.rows.forEach((row, r) =>
+    [...row].forEach((ch, c) => {
+      const bits = ch.codePointAt(0)! - 0x2800
+      if (bits > 0) for (const [dx, dy, bit] of BRAILLE_DOTS) if (bits & bit) grid[(r * 4 + dy) * w + c * 2 + dx] = 1
+    }),
+  )
+  return (x, y) => x >= 0 && y >= 0 && x < w && y < h && grid[y * w + x] === 1
+}
+
+// The two earlier frames behind the name: how many dots back, and how far each sinks into the background.
+const GHOSTS = [
+  [0, 0],
+  [1, 0.72],
+  [2, 0.86],
+] as const
+
+// The name in braille, its halves in the header's two shades. The big one is trailed by two fainter copies of
+// itself, the states it has left behind; at the small size they would only blur it. A shine centred on letter `at`
+// can run across it.
+function Logo({ size, bg, at = -Infinity }: { size: "big" | "small"; bg: string; at?: number }) {
   const t = useApp().theme
   const c = titleShades(t)
+  const mark = WORDMARK[size]
+  const on = dotGrid(mark)
+  // Dots between one copy and the next.
+  const shift = 4
+  const copies = size === "big" ? GHOSTS : GHOSTS.slice(0, 1)
+  const pad = size === "big" ? shift : 0
+  const cols = mark.rows[0]!.length + pad
+  const letterAt = (col: number) => mark.letters.reduce((n, start, i) => (col >= start ? i : n), 0)
+  const colorOf = (col: number) => {
+    const i = letterAt(col)
+    return mix(i < 4 ? c.open : c.state, t.shine, shineGlow(i, at))
+  }
   return (
-    <box flexDirection="row">
-      {[..."openstate"].map((ch, i) => (
-        <Fragment key={i}>
-          {i > 0 && <box width={1} backgroundColor={bg} />}
-          <ascii-font text={ch} font={font} color={shaded(mix(i < 4 ? c.open : c.state, t.shine, shineGlow(i, at)), bg)} backgroundColor={bg} />
-        </Fragment>
-      ))}
+    <box flexDirection="column" flexShrink={0}>
+      {mark.rows.map((_, r) => {
+        const parts: Part[] = []
+        for (let col = 0; col < cols; col++) {
+          let cell: Part = [" ", bg]
+          // A cell shows the newest copy that reaches it, in that copy's colour.
+          for (const [back, fade] of copies) {
+            const offset = size === "big" ? shift * (2 - back) : 0
+            let bits = 0
+            for (const [dx, dy, bit] of BRAILLE_DOTS) if (on(col * 2 + dx - offset, r * 4 + dy)) bits |= bit
+            if (bits) {
+              cell = [String.fromCodePoint(0x2800 + bits), mix(colorOf(col - offset / 2), bg, fade)]
+              break
+            }
+          }
+          const last = parts.at(-1)
+          if (last && last[1] === cell[1]) last[0] += cell[0]
+          else parts.push(cell)
+        }
+        return <Line key={r} parts={parts} bg={bg} />
+      })}
     </box>
   )
 }
@@ -41,7 +90,7 @@ export function Splash() {
   const found = s.sources.filter((x) => x.stores.some((st) => st.actions.length > 1))
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
-      <Logo font="block" bg={t.bg} />
+      <Logo size="big" bg={t.bg} />
       <box height={1} />
       <text>
         <span fg={t.accent}>{SPIN[frame % SPIN.length]} </span>
@@ -95,7 +144,7 @@ export function Waiting() {
   ]
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
-      <Logo font="block" bg={t.bg} at={at} />
+      <Logo size="big" bg={t.bg} at={at} />
       <box height={2} />
       <Line parts={status} bg={t.bg} />
       {/* Apps send to 8000 by default, so another port is the first thing to suspect when nothing shows up. */}
@@ -446,15 +495,15 @@ export function Help({ width, height }: { width: number; height: number }) {
   }
   const rows = Math.max(...cols.map((x) => x.length))
   // The logo is the first thing to go when the terminal is short.
-  const logo = height - 2 >= rows + 7
+  const logo = height - 2 >= rows + 9
   return (
     <Modal
       title="keys"
       width={w}
-      height={Math.min(height - 2, rows + (logo ? 6 : 3))}
+      height={Math.min(height - 2, rows + (logo ? 8 : 3))}
       footer={<RepoLink label="github" bg={t.panel} before={[[" ", t.dim]]} after={[[" ", t.dim]]} />}
     >
-      {logo && <Logo font="tiny" bg={t.panel} />}
+      {logo && <Logo size="small" bg={t.panel} />}
       <box flexDirection="row" flexGrow={1} overflow="hidden">
         {cols.map((col, i) => (
           <box key={i} width={colW} flexDirection="column">
