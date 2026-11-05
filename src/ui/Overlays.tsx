@@ -35,19 +35,16 @@ const GHOSTS = [
   [2, 0.86],
 ] as const
 
-// The name in braille, its halves in the header's two shades. The big one is trailed by two fainter copies of
-// itself, the states it has left behind; at the small size they would only blur it. A shine centred on letter `at`
-// can run across it.
-function Logo({ size, bg, at = -Infinity }: { size: "big" | "small"; bg: string; at?: number }) {
+// The name in braille, its halves in the header's two shades, trailed by two fainter copies of itself: the states
+// it has left behind. A shine centred on letter `at` can run across it.
+function Logo({ bg, at = -Infinity }: { bg: string; at?: number }) {
   const t = useApp().theme
   const c = titleShades(t)
-  const mark = WORDMARK[size]
+  const mark = WORDMARK.big
   const on = dotGrid(mark)
   // Dots between one copy and the next.
   const shift = 4
-  const copies = size === "big" ? GHOSTS : GHOSTS.slice(0, 1)
-  const pad = size === "big" ? shift : 0
-  const cols = mark.rows[0]!.length + pad
+  const cols = mark.rows[0]!.length + shift
   const letterAt = (col: number) => mark.letters.reduce((n, start, i) => (col >= start ? i : n), 0)
   const colorOf = (col: number) => {
     const i = letterAt(col)
@@ -60,8 +57,8 @@ function Logo({ size, bg, at = -Infinity }: { size: "big" | "small"; bg: string;
         for (let col = 0; col < cols; col++) {
           let cell: Part = [" ", bg]
           // A cell shows the newest copy that reaches it, in that copy's colour.
-          for (const [back, fade] of copies) {
-            const offset = size === "big" ? shift * (2 - back) : 0
+          for (const [back, fade] of GHOSTS) {
+            const offset = shift * (2 - back)
             let bits = 0
             for (const [dx, dy, bit] of BRAILLE_DOTS) if (on(col * 2 + dx - offset, r * 4 + dy)) bits |= bit
             if (bits) {
@@ -90,7 +87,7 @@ export function Splash() {
   const found = s.sources.filter((x) => x.stores.some((st) => st.actions.length > 1))
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
-      <Logo size="big" bg={t.bg} />
+      <Logo bg={t.bg} />
       <box height={1} />
       <text>
         <span fg={t.accent}>{SPIN[frame % SPIN.length]} </span>
@@ -144,7 +141,7 @@ export function Waiting() {
   ]
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column" backgroundColor={t.bg}>
-      <Logo size="big" bg={t.bg} at={at} />
+      <Logo bg={t.bg} at={at} />
       <box height={2} />
       <Line parts={status} bg={t.bg} />
       {/* Apps send to 8000 by default, so another port is the first thing to suspect when nothing shows up. */}
@@ -318,7 +315,7 @@ function Modal(props: {
   title: string
   width: number
   height: number
-  foot?: { note?: Part[]; hints: Hint[] }
+  foot?: { note?: Part[]; left?: React.ReactNode; hints: Hint[] }
   footer?: React.ReactNode
   children: React.ReactNode
 }) {
@@ -339,7 +336,7 @@ function Modal(props: {
         paddingRight={1}
       >
         {props.children}
-        {props.foot && <Footer note={props.foot.note} hints={props.foot.hints} width={props.width - 4} />}
+        {props.foot && <Footer note={props.foot.note} left={props.foot.left} hints={props.foot.hints} width={props.width - 4} />}
         {/* Over the bottom border, at the right, like the panels' counters. */}
         {props.footer && (
           <box position="absolute" bottom={-1} right={1}>
@@ -484,13 +481,37 @@ export function SettingsCard({ width }: { width: number }) {
   )
 }
 
+// Keys that do one thing and its opposite share a row in the help: `[ ]  step back / forward`.
+const PAIRS: [string, string, string][] = [
+  ["tab", "shift+tab", "next / prev panel"],
+  [">", "<", "widen / narrow"],
+  ["<g>t", "<g>shift+t", "next / prev app"],
+  ["[", "]", "step back / forward"],
+  ["{", "}", "back / forward 10"],
+  ["shift+h", "shift+l", "½ track back / fwd"],
+  ["home", "end", "first / live"],
+  ["-", "+", "slower / faster"],
+  ["shift+j", "shift+k", "move down / up"],
+  ["ctrl+d", "ctrl+u", "half page down / up"],
+  ["<g>g", "shift+g", "top / bottom"],
+  ["h", "l", "collapse / expand"],
+]
+const SHORT: Record<string, string> = { return: "enter", escape: "esc", "shift+tab": "S-tab", "ctrl+d": "^d", "ctrl+u": "^u" }
+const helpKey = (key: string) => SHORT[key] ?? keyLabel(key)
+// Fixed columns, so related groups sit together and the card reads left to right.
+const HELP_COLUMNS = [
+  ["lists", "panels", "apps", "tools"],
+  ["time", "inspector", "yank"],
+  ["app", "actions", "sources"],
+]
+
 export function Help({ width, height }: { width: number; height: number }) {
   const s = useApp()
   const t = s.theme
   if (!s.help) return null
   // List navigation is shared by every panel, so it is listed once under "lists".
   const nav = new Set(["j", "k", "up", "down", "left", "right", "ctrl+d", "ctrl+u", "<g>g", "shift+g", "ctrl+l", "ctrl+h"])
-  const all = [
+  const all: Bind[] = [
     // Said once here, for panels and cards alike, so the cards need not repeat it.
     { key: "hjkl", desc: "move everywhere", group: "lists", run: () => {} },
     ...globalBinds(s),
@@ -499,44 +520,62 @@ export function Help({ width, height }: { width: number; height: number }) {
     ...panelBinds(s, "inspector").filter((b) => !nav.has(b.key) || b.key === "h" || b.key === "l"),
     // Not keys, but the way into options; listed so they are found from here.
     { key: ":set", desc: "settings", group: "tools", run: () => {} },
-    { key: ":set x=v", desc: "change one", group: "tools", run: () => {} },
   ]
-  const groups = new Map<string, Bind[]>()
+  const groups = new Map<string, [string, string][]>()
   for (const b of all) {
-    const g = groups.get(b.group) ?? []
-    if (!["j", "k", "up", "down", "left", "right", "ctrl+l", "ctrl+h"].includes(b.key) && !g.some((x) => x.desc === b.desc)) g.push(b)
-    groups.set(b.group, g)
+    const rows = groups.get(b.group) ?? []
+    groups.set(b.group, rows)
+    if (["j", "k", "up", "down", "left", "right", "ctrl+l", "ctrl+h", "space"].includes(b.key) && b.group !== "time") continue
+    const pair = PAIRS.find(([a, z]) => a === b.key || z === b.key)
+    if (pair) {
+      if (pair[0] === b.key) rows.push([`${helpKey(pair[0])} ${helpKey(pair[1])}`, pair[2]])
+      continue
+    }
+    // Under "yank", the word itself goes without saying.
+    const desc = b.group === "yank" ? b.desc.replace(/^yank /, "") : b.desc
+    if (!rows.some(([, d]) => d === desc)) rows.push([helpKey(b.key), desc])
   }
-  const w = Math.min(width - 4, 96)
-  const colW = Math.floor((w - 4) / 3)
-  const cols: Part[][][] = [[], [], []]
-  // Greedy fill: each group goes to the currently shortest column.
-  for (const [name, binds] of groups) {
-    const col = cols.reduce((a, b) => (b.length < a.length ? b : a))
-    col.push([[name, t.accent, BOLD]])
-    for (const b of binds) col.push([[` ${keyLabel(b.key).padEnd(10)}`, t.fg, BOLD], [b.desc, t.muted]])
-    col.push([[" ", t.dim]])
-  }
+  // The inspector's tabs, one row instead of five.
+  const tabs = groups.get("inspector")
+  if (tabs) groups.set("inspector", [["1-5", "state … raw tabs"], ...tabs.filter(([k]) => !/^[1-5]$/.test(k))])
+  const w = Math.min(width - 4, 100)
+  const cols: Part[][][] = HELP_COLUMNS.map((names) => {
+    const keyW = Math.max(...names.flatMap((n) => groups.get(n) ?? []).map(([k]) => k.length)) + 2
+    return names.flatMap((name, i) => {
+      const rows = groups.get(name) ?? []
+      if (!rows.length) return []
+      return [
+        ...(i ? [[[" ", t.dim]] as Part[]] : []),
+        [[` ${name}`, t.accent, BOLD]] as Part[],
+        ...rows.map(([k, d]): Part[] => [[`  ${k.padEnd(keyW)}`, t.fg, BOLD], [d, t.muted]]),
+      ]
+    })
+  })
+  // Each column as wide as its longest row, the room left over shared out evenly.
+  const natural = cols.map((col) => Math.max(...col.map((parts) => parts.reduce((n, [x]) => n + x.length, 0))) + 2)
+  const spare = Math.floor((w - 4 - natural.reduce((a, b) => a + b, 0)) / cols.length)
+  const colWs = natural.map((n) => Math.max(8, n + spare))
   const rows = Math.max(...cols.map((x) => x.length))
-  // The logo is the first thing to go when the terminal is short.
-  const logo = height - 2 >= rows + 9
   return (
     <Modal
       title="keys"
       width={w}
-      height={Math.min(height - 2, rows + (logo ? 8 : 3))}
-      footer={<RepoLink label="github" bg={t.panel} before={[[" ", t.dim]]} after={[[" ", t.dim]]} />}
+      height={Math.min(height - 3, rows + 3)}
+      foot={{
+        left: <RepoLink label="github" bg={t.panel} before={[[" ", t.dim]]} />,
+        hints: [{ key: "esc", desc: "close", run: () => (s.help = false) }],
+      }}
     >
-      {logo && <Logo size="small" bg={t.panel} />}
       <box flexDirection="row" flexGrow={1} overflow="hidden">
         {cols.map((col, i) => (
-          <box key={i} width={colW} flexDirection="column">
+          <box key={i} width={colWs[i]} flexDirection="column">
             {col.map((parts, j) => (
-              <Line key={j} parts={fit(parts, colW)} />
+              <Line key={j} parts={fit(parts, colWs[i]!)} />
             ))}
           </box>
         ))}
       </box>
+      <Line parts={[[" ", t.dim]]} />
     </Modal>
   )
 }

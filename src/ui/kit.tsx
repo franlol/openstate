@@ -151,12 +151,13 @@ export function Hints({ hints, bg, sep = HINT_SEP }: { hints: Hint[]; bg?: strin
   )
 }
 
-// A card's last row: what is going on at the left, its keys at the right.
-export function Footer({ note = [], hints, width, bg }: { note?: Part[]; hints: Hint[]; width: number; bg?: string }) {
+// A card's last row: what is going on at the left (a note, or something of its own such as a link), its keys at the right.
+export function Footer(props: { note?: Part[]; left?: React.ReactNode; hints: Hint[]; width: number; bg?: string }) {
+  const { note = [], hints, width, bg } = props
   return (
     <box flexDirection="row" height={1} flexShrink={0}>
       <box flexGrow={1} overflow="hidden">
-        <Line parts={fit(note, width - hintsWidth(hints) - 2)} bg={bg} />
+        {props.left ?? <Line parts={fit(note, width - hintsWidth(hints) - 2)} bg={bg} />}
       </box>
       <Hints hints={hints} bg={bg} />
     </box>
