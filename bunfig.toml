@@ -1,0 +1,3 @@
+[test]
+# Config and origins files go to a temporary folder, never the user's own.
+preload = ["./test/setup.ts"]

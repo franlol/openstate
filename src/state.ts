@@ -171,6 +171,7 @@ export class AppState {
   private listeners = new Set<() => void>()
   private version = 0
   private animTimer: ReturnType<typeof setInterval> | null = null
+  private dataTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(settings: Settings = DEFAULTS, demo = false) {
     this.settings = { ...settings }
@@ -186,7 +187,7 @@ export class AppState {
       this.bridge = startBridge({ onChange: hooks[0], isPaused: hooks[1], maxAge: hooks[2], warn: (text) => this.notify(text, true) })
       this.sources = this.bridge.sources
       this.access = this.bridge.access
-      this.listenError = this.bridge.listen(this.settings.port)
+      this.listenError = this.bridge.listen(this.settings.port, this.settings.lan)
     }
     this.activeKey = this.sources[0]?.stores[0]?.key ?? ""
     for (const st of this.allStores()) this.lastSeen.set(st.key, st.actions.length)
@@ -337,7 +338,15 @@ export class AppState {
     this.clampSrcCursor()
   }
 
+  // Apps may report thousands of actions a second; the screen catches up at most once a frame.
   private onData() {
+    this.dataTimer ??= setTimeout(() => {
+      this.dataTimer = null
+      this.takeData()
+    }, 16)
+  }
+
+  private takeData() {
     this.dataRev++
     const now = Date.now()
     // A page asking to come in is said once, as it arrives; the list keeps it until it is answered.
@@ -429,8 +438,8 @@ export class AppState {
     Object.assign(this.settings, changed)
     if (changed.theme) this.theme = findTheme(changed.theme)
     if (changed.maxage !== undefined) this.bridge?.setMaxAge(changed.maxage)
-    if (changed.port !== undefined && this.bridge) {
-      this.listenError = this.bridge.listen(changed.port)
+    if ((changed.port !== undefined || changed.lan !== undefined) && this.bridge) {
+      this.listenError = this.bridge.listen(this.settings.port, this.settings.lan)
       if (this.listenError) return this.notify(`E: ${this.listenError} · :set port=<another>`, true)
     }
     const names = Object.keys(changed) as OptionName[]

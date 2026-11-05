@@ -9,7 +9,8 @@ Apps connect through `client/` (a stand-in for the Redux DevTools extension) to 
 - `bun run dev` / `bun run start` — run the TUI; `bun run demo` with fake apps. `start`, `demo` and the `openstate`
   command run React's production build (`NODE_ENV=production`, set before Bun starts: it decides how JSX compiles);
   `dev` keeps the development build, several times slower
-- `bun run typecheck` — must pass before finishing a change
+- `bun run typecheck` and `bun test` — must pass before finishing a change. `test/setup.ts` points the config at a
+  temporary folder; `test/bridge.test.ts` runs the real client against the bridge
 - `bun run build` — compiles `@openstate/client` to `dist/client` (JS + types) for bundlers such as Next, which do not
   compile TypeScript from `node_modules`; Bun imports `client/index.ts` directly. `--env disable` keeps
   `process.env.NODE_ENV` for the app's bundler to replace instead of Bun's own value

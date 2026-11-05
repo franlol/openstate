@@ -96,7 +96,7 @@ export type Access = {
 }
 
 // What the list shows for an origin: the host, as the scheme says little.
-export const hostOf = (origin: string) => origin.replace(/^[a-z]+:\/\//, "")
+export const hostOf = (origin: string) => (origin === "null" ? "sandboxed page" : origin.replace(/^[a-z]+:\/\//, ""))
 export const isLocal = (origin: string) => /^[a-z]+:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin)
 
 export type Change = { path: string; before: unknown; after: unknown }
@@ -127,15 +127,14 @@ function countChanges(a: unknown, b: unknown): number {
 }
 
 // Leaf-level structural diff, keyed by dotted paths ("cart.items.1.qty").
-export function diff(a: unknown, b: unknown, path = ""): Change[] {
-  if (Object.is(a, b)) return []
+export function diff(a: unknown, b: unknown, path = "", out: Change[] = []): Change[] {
+  if (Object.is(a, b)) return out
   if (isObj(a) && isObj(b) && Array.isArray(a) === Array.isArray(b)) {
-    const keys = new Set([...Object.keys(a), ...Object.keys(b)])
-    const out: Change[] = []
-    for (const k of keys) out.push(...diff(a[k], b[k], path ? `${path}.${k}` : k))
+    for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) diff(a[k], b[k], path ? `${path}.${k}` : k, out)
     return out
   }
-  return [{ path, before: a, after: b }]
+  out.push({ path, before: a, after: b })
+  return out
 }
 
 // Value at a dotted path ("cart.items.1"); undefined when any segment is missing.

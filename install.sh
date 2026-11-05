@@ -20,15 +20,29 @@ case "$(uname -m)" in
 esac
 
 if [ -n "${OPENSTATE_VERSION:-}" ]; then
-  url="https://github.com/$repo/releases/download/v${OPENSTATE_VERSION#v}/openstate-$os-$cpu.tar.gz"
+  base="https://github.com/$repo/releases/download/v${OPENSTATE_VERSION#v}"
 else
-  url="https://github.com/$repo/releases/latest/download/openstate-$os-$cpu.tar.gz"
+  base="https://github.com/$repo/releases/latest/download"
 fi
+archive="openstate-$os-$cpu.tar.gz"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 echo "downloading openstate for $os-$cpu"
-curl -fsSL "$url" | tar -xz -C "$tmp"
+curl -fsSL "$base/$archive" -o "$tmp/$archive"
+curl -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS"
+
+# The archive must match the checksum published with it.
+if command -v sha256sum >/dev/null; then
+  sum="$(sha256sum "$tmp/$archive" | cut -d' ' -f1)"
+else
+  sum="$(shasum -a 256 "$tmp/$archive" | cut -d' ' -f1)"
+fi
+if ! grep -q "^$sum  $archive\$" "$tmp/SHA256SUMS"; then
+  echo "openstate: $archive does not match its checksum; nothing was installed" >&2
+  exit 1
+fi
+tar -xzf "$tmp/$archive" -C "$tmp"
 mkdir -p "$dir"
 # Moved into place in one step, so a running openstate keeps its file until it restarts.
 mv "$tmp/openstate" "$dir/openstate"

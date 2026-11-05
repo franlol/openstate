@@ -3,10 +3,12 @@
 //   npm/cli/                 @openstate/cli, the launcher that picks the binary for the machine
 //   npm/client/              @openstate/client, compiled for bundlers and Node
 //   openstate-<os>-<cpu>.tar.gz   the same binaries for GitHub Releases and install.sh
+//   SHA256SUMS               their checksums, which install.sh checks
 // Run with `bun run release`; it publishes nothing. The native OpenTUI packages for every target must be installed:
 // `bun install --os="*" --cpu="*"`.
 import { $ } from "bun"
-import { chmodSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { chmodSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import root from "../package.json" with { type: "json" }
 
@@ -60,6 +62,11 @@ for (const t of TARGETS) {
   console.log(`built ${name}`)
 }
 
+// In sha256sum's format, so `sha256sum -c` reads it too.
+const archives = TARGETS.map((t) => `openstate-${t.os}-${t.cpu}.tar.gz`)
+const sums = archives.map((f) => `${createHash("sha256").update(readFileSync(join(OUT, f))).digest("hex")}  ${f}`)
+writeFileSync(join(OUT, "SHA256SUMS"), sums.join("\n") + "\n")
+
 // The launcher: every platform package is optional, so npm installs only the one that fits.
 const cli = join(OUT, "npm", "cli")
 mkdirSync(cli, { recursive: true })
@@ -97,4 +104,4 @@ console.log(`\nrelease/ is ready for ${version}. To publish:
   for d in release/npm/cli-*; do npm publish --access public "$d"; done
   npm publish --access public release/npm/cli
   npm publish --access public release/npm/client
-  gh release create v${version} release/*.tar.gz`)
+  gh release create v${version} release/*.tar.gz release/SHA256SUMS`)

@@ -10,10 +10,14 @@ import { loadOrigins, saveOrigins } from "./settings"
 
 type Conn = {
   source: Source | null
-  // The page it comes from, as the browser says; none outside a browser.
+  // The page it comes from, as the browser says; for an app on another device (`:set lan`), its address as
+  // tcp://ip. None for apps on this machine outside a browser.
   origin?: string
-  // Frames from a page still waiting for a yes, handled once it gets one.
+  // Frames from a page still waiting for a yes, handled once it gets one, and their size.
   held?: string[]
+  heldBytes?: number
+  // It sent more than is kept while waiting: a yes has it reconnect and start over.
+  overflow?: boolean
   // A blocked page: kept connected, so its client does not keep retrying, and its frames kept like a waiting
   // page's (up to HELD_MAX) in case it is let in after all.
   parked?: boolean
@@ -53,14 +57,17 @@ type Link = {
 export type Bridge = {
   sources: Source[]
   access: Access
-  listen(port: number): string | null
+  // On this machine only, or also on the network for phones, VMs and containers (`lan`).
+  listen(port: number, lan: boolean): string | null
   // Frees the port, e.g. for the new openstate after an update.
   close(): void
   setMaxAge(n: number): void
 }
 
-// Frames kept from one blocked page in case it is let in later; a busy one goes past this and reconnects instead.
+// Frames kept from one waiting or blocked page in case it is let in later; a busy one goes past this and
+// reconnects instead.
 const HELD_MAX = 1000
+const HELD_BYTES = 16 << 20
 
 // zustand and friends hand over states, not a reducer, so nothing can be replayed differently.
 const unsupported = (st: Store, what: string) => new Error(`${what} needs a Redux store; ${st.name} (${st.lib}) only reports its states`)
@@ -74,13 +81,15 @@ export function startBridge(opts: {
   const sources: Source[] = []
   const links = new WeakMap<Store, Link>()
   const sockets = new Set<Socket>()
-  let server: Server<Conn> | null = null
+  let servers: Server<Conn>[] = []
+  let bound: { port: number; lan: boolean } | null = null
   let colors = 0
   const { allowed, blocked } = loadOrigins()
   const origins: Origin[] = [...blocked].map((origin) => ({ origin, access: "blocked", tries: 0, time: 0, live: 0 }))
   // How many of an origin's sockets are waiting or parked, for the list.
+  const waiting = (ws: Socket) => !!(ws.data.held || ws.data.parked || ws.data.overflow)
   const recount = () => {
-    for (const o of origins) o.live = socketsOf(o.origin).filter((ws) => ws.data.held || ws.data.parked).length
+    for (const o of origins) o.live = socketsOf(o.origin).filter(waiting).length
   }
   const save = () => void saveOrigins(allowed, blocked).catch(() => {})
   const socketsOf = (origin: string) => [...sockets].filter((ws) => ws.data.origin === origin)
@@ -93,14 +102,13 @@ export function startBridge(opts: {
       origins.splice(0, origins.length, ...origins.filter((o) => o.origin !== origin))
       save()
       for (const ws of socketsOf(origin)) {
-        const blocked = ws.data.parked
-        ws.data.parked = undefined
+        if (!waiting(ws)) continue
         // Those waiting or blocked get in with what they have sent so far. One that sent more than was kept is
         // asked to reconnect and start over instead; @openstate/client does so at once.
-        const held = ws.data.held
-        ws.data.held = undefined
-        if (held) for (const text of held) handle(ws, text)
-        else if (blocked) ws.close(1012, "allowed in openstate, reconnect")
+        const { held, overflow } = ws.data
+        Object.assign(ws.data, { held: undefined, heldBytes: undefined, parked: undefined, overflow: undefined })
+        if (overflow) ws.close(1012, "allowed in openstate, reconnect")
+        else for (const text of held ?? []) handle(ws, text)
       }
       opts.onChange()
     },
@@ -123,7 +131,7 @@ export function startBridge(opts: {
       allowed.delete(origin)
       blocked.delete(origin)
       // Its blocked sockets go too: kept, they would get in along with the next one on a yes, as a second app.
-      for (const ws of socketsOf(origin)) if (ws.data.parked) ws.close(1000, "forgotten in openstate")
+      for (const ws of socketsOf(origin)) if (ws.data.parked || ws.data.overflow) ws.close(1000, "forgotten in openstate")
       origins.splice(0, origins.length, ...origins.filter((o) => o.origin !== origin))
       save()
       opts.onChange()
@@ -133,7 +141,7 @@ export function startBridge(opts: {
   // Not listened to from now on. A page that was already in is cut off instead: it comes back and is parked then.
   function park(ws: Socket) {
     if (ws.data.source) return ws.close(1008, "blocked in openstate")
-    ws.data.held ??= []
+    if (!ws.data.overflow) ws.data.held ??= []
     ws.data.parked = true
   }
 
@@ -463,16 +471,16 @@ export function startBridge(opts: {
     const st = src?.stores[0]
     const l = st && links.get(st)
     if (!st || !l) return
-    if (m.type === "STATE" && m.payload) fromLifted(st, l, jsan.parse(m.payload) as LiftedState)
+    if (m.type === "STATE" && m.payload) fromLifted(st, l, fromJsan(m.payload) as LiftedState)
     else if (m.type === "ACTION" && m.payload && m.action && m.nextActionId) {
-      const perform = jsan.parse(m.action) as { action: { type: string }; timestamp: number; stack?: string }
+      const perform = fromJsan(m.action) as { action: { type: string }; timestamp: number; stack?: string }
       const ours = l.expect.indexOf(perform.action.type)
       if (ours >= 0) l.expect.splice(ours, 1)
       record(st, l, {
         t: "action",
         id: "redux",
         action: perform.action,
-        state: jsan.parse(m.payload),
+        state: fromJsan(m.payload),
         time: perform.timestamp,
         stack: perform.stack,
         liftedId: m.nextActionId - 1,
@@ -535,32 +543,35 @@ export function startBridge(opts: {
   return {
     sources,
     access,
-    listen(port) {
-      try {
-        const next = Bun.serve<Conn>({
-          port,
-          fetch(req, srv) {
-            if (srv.upgrade(req, { data: { source: null, origin: req.headers.get("origin") ?? undefined } })) return
-            return new Response("openstate: connect with @openstate/client over WebSocket\n", { status: 426 })
+    listen(port, lan) {
+      const options = {
+        port,
+        fetch(req: Request, srv: Server<Conn>) {
+          const ip = srv.requestIP(req)?.address
+          // Another device has no page to name it by; it is asked about by its address.
+          const device = ip && !isLoopback(ip) ? `tcp://${ip.includes(":") ? `[${ip}]` : ip}` : undefined
+          if (srv.upgrade(req, { data: { source: null, origin: req.headers.get("origin") ?? device } })) return
+          return new Response("openstate: connect with @openstate/client over WebSocket\n", { status: 426 })
+        },
+        websocket: {
+          open(ws: Socket) {
+            sockets.add(ws)
+            admit(ws)
           },
-          websocket: {
-            open(ws) {
-              sockets.add(ws)
-              admit(ws)
-            },
-            message(ws, raw) {
-              // Past the limit a blocked page's frames are dropped; a yes then has it reconnect.
-              if (ws.data.parked && ws.data.held && ws.data.held.length >= HELD_MAX) ws.data.held = undefined
-              if (ws.data.parked && !ws.data.held) return
-              if (ws.data.held) ws.data.held.push(String(raw))
-              else handle(ws, String(raw))
-            },
-            close(ws) {
-              sockets.delete(ws)
-              // A page that gave up waiting: still listed, as it will try again.
-              ws.data.held = undefined
-              ws.data.parked = undefined
-              recount()
+          message(ws: Socket, raw: string | Buffer) {
+            const text = String(raw)
+            if (!waiting(ws)) return handle(ws, text)
+            if (!ws.data.held) return
+            // Past the limit a waiting page's frames are dropped; a yes then has it reconnect.
+            ws.data.heldBytes = (ws.data.heldBytes ?? 0) + text.length
+            if (ws.data.held.length < HELD_MAX && ws.data.heldBytes <= HELD_BYTES) return void ws.data.held.push(text)
+            Object.assign(ws.data, { held: undefined, heldBytes: undefined, overflow: true })
+          },
+          close(ws: Socket) {
+            sockets.delete(ws)
+            // A page that gave up waiting: still listed, as it will try again.
+            Object.assign(ws.data, { held: undefined, heldBytes: undefined, parked: undefined, overflow: undefined })
+            recount()
               opts.onChange()
               const src = ws.data.source
               if (!src) return
@@ -569,18 +580,46 @@ export function startBridge(opts: {
               opts.onChange()
             },
           },
-        })
-        server?.stop(true)
-        server = next
+        }
+      // Every address of this machine for lan; otherwise loopback only, IPv4 and IPv6 (`localhost` may be either).
+      const bind = (port: number, lan: boolean) => {
+        const out: Server<Conn>[] = []
+        try {
+          for (const hostname of lan ? ["0.0.0.0"] : ["127.0.0.1", "::1"]) {
+            try {
+              out.push(Bun.serve<Conn>({ ...options, port, hostname }))
+            } catch (e) {
+              // A machine without IPv6 still works on IPv4.
+              if (hostname !== "::1" || (e as { code?: string }).code === "EADDRINUSE") throw e
+            }
+          }
+          return out
+        } catch (e) {
+          for (const srv of out) srv.stop(true)
+          throw e
+        }
+      }
+      // The old servers go first, as the new ones may want the same port; on failure they come back.
+      for (const srv of servers) srv.stop(true)
+      try {
+        servers = bind(port, lan)
+        bound = { port, lan }
         return null
       } catch (e) {
+        servers = []
+        try {
+          if (bound) servers = bind(bound.port, bound.lan)
+        } catch {
+          bound = null
+        }
         const code = (e as { code?: string }).code
         return code === "EADDRINUSE" ? `port ${port} is in use` : (e as Error).message
       }
     },
     close() {
-      server?.stop(true)
-      server = null
+      for (const srv of servers) srv.stop(true)
+      servers = []
+      bound = null
     },
     setMaxAge(n) {
       // Remote apps set their own maxAge in their devtools options.
@@ -588,5 +627,29 @@ export function startBridge(opts: {
     },
   }
 }
+
+// jsan as Redux DevTools remote sends it. It restores shared objects and cycles alike; a cycle would send diffs and
+// renders round forever, so each reference back up its own path becomes "[Circular]". Shared objects stay shared.
+function fromJsan(text: string): any {
+  const value = jsan.parse(text)
+  const done = new WeakSet<object>()
+  const path = new Set<object>()
+  const walk = (v: Record<string, unknown>) => {
+    if (done.has(v)) return
+    path.add(v)
+    for (const k of Object.keys(v)) {
+      const x = v[k]
+      if (!x || typeof x !== "object") continue
+      if (path.has(x)) v[k] = "[Circular]"
+      else walk(x as Record<string, unknown>)
+    }
+    path.delete(v)
+    done.add(v)
+  }
+  if (value && typeof value === "object") walk(value as Record<string, unknown>)
+  return value
+}
+
+const isLoopback = (ip: string) => ip === "::1" || ip.startsWith("127.") || ip.startsWith("::ffff:127.")
 
 const actionOf = (a: { type: string; payload?: unknown }) => (a.payload === undefined ? { type: a.type } : { type: a.type, payload: a.payload })

@@ -27,6 +27,12 @@ Apps outside a browser and pages on this machine (`localhost`, `127.0.0.1`) come
 else waits as `? host` in the sources list until you answer with the ✓ or ✗ on its row (shown under the mouse
 or the cursor; `enter` and `dd` from the keyboard). Blocked pages stay listed as `✗ host  blocked`: ✓ lets them in after all, ↺ forgets them so they are asked about again. `dd` on a connected app cuts it off; a
 page from elsewhere is asked about again if it comes back. The answers are kept in `~/.config/openstate/origins`.
+A sandboxed page or a local file (origin `null`, shown as `sandboxed page`) is let in for the current run only.
+
+### Other devices
+
+openstate listens on this machine only. For an app on a phone, a VM or a container, `:set lan` listens on the
+network too; each device is asked about by its address (`? 192.168.1.20`), like a page from elsewhere.
 
 ### Apps already set up for Redux DevTools remote
 
@@ -135,6 +141,7 @@ change is saved at once. From the command line:
 | `time`   | `clock` \| `delta`                    | `clock`     | time column of the action list: `14:39:15`, or time since the previous action (`+1.20s`) |
 | `flash`  | on / off                              | on          | rows and values light up as actions arrive          |
 | `port`   | 1024–65535                            | 8000        | where openstate listens; tell the client with `OPENSTATE_URL` or `install({ url })` |
+| `lan`    | on / off                              | off         | also listen on the network, for phones, VMs and containers; each device is asked about |
 | `theme`  | `openstate` `catppuccin` `tokyonight` `gruvbox` `nord` | `openstate` | colour theme; `:theme` previews them as you move |
 | `updatecheck` | on / off                         | on          | ask npm for a new version on start (see below)      |
 
@@ -155,12 +162,13 @@ check on start; `:update` still looks when asked. Running from a clone of the re
 bun install
 bun run start        # from source; bun run demo with the sample apps, bun run dev restarts on save
 bun run typecheck
+bun test             # the bridge against real clients, diffs, settings, history files
 OPENSTATE_DEBUG=debug.log bun run start      # logs how each key was dispatched
 ```
 
 `bun run release` builds what a release publishes into `release/`: a binary per platform, as npm packages
 (`@openstate/cli-<os>-<cpu>`, picked by the `@openstate/cli` launcher) and as archives for GitHub Releases and
-`install.sh`, plus `@openstate/client`. It needs OpenTUI's native packages for every platform:
+`install.sh` (with their `SHA256SUMS`, which `install.sh` checks), plus `@openstate/client`. It needs OpenTUI's native packages for every platform:
 `bun install --os="*" --cpu="*"`.
 
 The OpenTUI agent skill is not committed; reinstall it with `bunx skills add https://opentui.com --skill opentui`.

@@ -11,6 +11,7 @@ export type Settings = {
   flash: boolean
   theme: string
   port: number
+  lan: boolean
   updatecheck: boolean
 }
 export type OptionName = keyof Settings
@@ -58,6 +59,12 @@ export const OPTIONS: Option[] = [
     typed: true,
   },
   {
+    name: "lan",
+    desc: "let other devices connect",
+    help: "phones, VMs, containers; each one is asked about, like a page",
+    kind: "bool",
+  },
+  {
     name: "updatecheck",
     desc: "look for a new version on start",
     help: "asks npm once per start; :update always can",
@@ -66,7 +73,7 @@ export const OPTIONS: Option[] = [
   { name: "theme", desc: "colour theme", help: "also :theme, which previews them", kind: "enum", values: () => themes.map((t) => t.id) },
 ]
 
-export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, theme: themes[0]!.id, port: 8000, updatecheck: true }
+export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, theme: themes[0]!.id, port: 8000, lan: false, updatecheck: true }
 
 export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "openstate", "config")
 // The web pages let in or kept out, next to the config: `allow https://shop.dev`, `block https://x.io`.
@@ -88,7 +95,8 @@ export function loadOrigins(): { allowed: Set<string>; blocked: Set<string> } {
 
 export async function saveOrigins(allowed: Set<string>, blocked: Set<string>): Promise<void> {
   const out = ["# web pages openstate lets in (allow) or keeps out (block); ✓ and ✗ in the sources list", ""]
-  for (const o of allowed) out.push(`allow ${o}`)
+  // "null" is any sandboxed or file page, not one site: it is let in for this run only.
+  for (const o of allowed) if (o !== "null") out.push(`allow ${o}`)
   for (const o of blocked) out.push(`block ${o}`)
   await Bun.write(ORIGINS_PATH, out.join("\n") + "\n")
 }
