@@ -150,8 +150,8 @@ export class AppState {
   playing = false
   speed = 1
   private playTimer: ReturnType<typeof setTimeout> | null = null
-  // Track cell under the mouse.
-  hover: { cell: number } | null = null
+  // Track cell under the mouse, and its actions, which the action list tints.
+  hover: { cell: number; ids: Set<number> } | null = null
   // Seconds shown by the main track, set when it renders; H/L travel half of it.
   trackSpan = 60
   onQuit: () => void = () => {}

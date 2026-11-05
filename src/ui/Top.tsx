@@ -257,7 +257,7 @@ export function Track({ width }: { width: number }) {
     onMouseDrag: (e: MouseEvent) => travel(e, false),
     onMouseMove: (e: MouseEvent) => {
       const c = cellAt(e)
-      if (s.hover?.cell !== c) (s.hover = { cell: c }), s.emit()
+      if (s.hover?.cell !== c) (s.hover = { cell: c, ids: new Set(grid[c]?.actions.map((a) => a.id)) }), s.emit()
     },
     // Wheel travels a few cells at a time: up/left goes back.
     onMouseScroll: (e: MouseEvent) => {

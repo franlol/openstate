@@ -233,7 +233,10 @@ export function Actions({ width }: { width: number }) {
   const sel = s.selected()
   const idx = s.selectedIndex()
   const inner = width - 3
-  const ref = useScrollTo(sel ? `act-${sel.id}` : undefined)
+  // Hovering a track cell brings its actions into view; leaving it, the selected one again.
+  const hovered = s.hover?.ids.size ? s.hover.ids : null
+  const peek = hovered ? tl.find((a) => hovered.has(a.id)) : undefined
+  const ref = useScrollTo(peek ? `act-${peek.id}` : sel ? `act-${sel.id}` : undefined)
   // Render a window around the cursor; the store keeps up to `maxage` actions.
   const from = Math.max(0, Math.min(idx - WINDOW / 2, tl.length - WINDOW))
   const visible = tl.slice(from, from + WINDOW)
@@ -286,7 +289,13 @@ export function Actions({ width }: { width: number }) {
           const changes = changeCount(a)
           const src = s.merge ? s.sourceOf(a.storeKey) : undefined
           const flash = s.flashLevel(s.flashActions.get(a.id))
-          const base = range.has(a.id) ? mix(t.selBg, t.sources[2]!, 0.3) : isSel ? t.selBg : t.panel
+          const base = range.has(a.id)
+            ? mix(t.selBg, t.sources[2]!, 0.3)
+            : isSel
+              ? t.selBg
+              : hovered?.has(a.id)
+                ? mix(t.panel, t.accent, 0.1)
+                : t.panel
           const bg = flash ? mix(base, t.flash, flash) : base
           const typeFg = a.skipped || future ? t.dim : isSel ? t.fg : t.fg
           const attrs = a.skipped ? STRIKE : isSel ? BOLD : undefined
