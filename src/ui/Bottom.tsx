@@ -136,7 +136,7 @@ export function CmdLine({ width }: { width: number }) {
       : status !== "ok"
         ? [
             [status === "outdated" ? "↑ " : "! ", status === "outdated" ? t.warn : t.remove, BOLD],
-            [`${src!.name}: client ${src!.client!.version ?? "before 0.1.4"}, ${CLIENT_VERSION} is out · `, t.muted],
+            [`${src!.name}: client ${src!.client!.version ?? "0.1.3 or older"}, ${CLIENT_VERSION} is out · `, t.muted],
             [CLIENT_UPDATE, t.fg],
             [" · ", t.muted],
             ["yc", t.fg, BOLD],

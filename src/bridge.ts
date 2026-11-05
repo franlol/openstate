@@ -337,7 +337,7 @@ export function startBridge(opts: {
     // Once per app and run of openstate: the mark in the sources panel says it from then on.
     else if (status === "outdated" && !toldOutdated.has(src.name)) {
       toldOutdated.add(src.name)
-      opts.warn(`${src.name}: its client ${m.client ?? "(before 0.1.4)"} is behind ${CLIENT_VERSION} · select it for the command`, false)
+      opts.warn(`${src.name}: its client ${m.client ?? "0.1.3 or older"} is behind ${CLIENT_VERSION} · select it for the command`, false)
     }
   }
   const toldOutdated = new Set<string>()
