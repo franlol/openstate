@@ -195,7 +195,9 @@ export function Suggestions({ width }: { width: number }) {
   const matches = s.commandMatches(s.input)
   if (!matches.length) return null
   const sel = s.cmdIndex % matches.length
-  const w = Math.min(52, width - 2)
+  // Names as wide as the longest, so a description never runs into its name.
+  const nameW = Math.max(...matches.map((c) => c.name.length)) + 2
+  const w = Math.min(nameW + 1 + Math.max(...matches.map((c) => c.desc.length)) + 3, width - 2)
   return (
     <box
       position="absolute"
@@ -216,7 +218,7 @@ export function Suggestions({ width }: { width: number }) {
           parts={fit(
             [
               [i === sel ? "▌" : " ", t.accent],
-              [c.name.padEnd(8), i === sel ? t.fg : t.sources[1]!, BOLD],
+              [c.name.padEnd(nameW), i === sel ? t.fg : t.sources[1]!, BOLD],
               [c.desc, t.muted],
             ],
             w - 2,
@@ -238,6 +240,9 @@ function SetSuggestions({ width, prefix }: { width: number; prefix: string }) {
   const opts = OPTIONS.filter((o) => o.name.startsWith(prefix))
   if (!opts.length) return null
   const w = Math.min(90, width - 2)
+  // Columns as wide as their longest entry across all options, so they stay put while the prefix narrows the list.
+  const setW = Math.max(...OPTIONS.map((o) => format(o.name, s.settings).length)) + 2
+  const descW = Math.max(...OPTIONS.map((o) => o.desc.length)) + 2
   return (
     <box
       position="absolute"
@@ -260,8 +265,8 @@ function SetSuggestions({ width, prefix }: { width: number; prefix: string }) {
           parts={fit(
             [
               [" ", t.dim],
-              [format(o.name, s.settings).padEnd(18), t.sources[1]!, BOLD],
-              [o.desc.padEnd(32), t.muted],
+              [format(o.name, s.settings).padEnd(setW), t.sources[1]!, BOLD],
+              [o.desc.padEnd(descW), t.muted],
               [o.kind === "bool" ? "on/off" : o.kind === "number" ? `${o.min}–${o.max}` : o.values!().join(" | "), t.dim],
             ],
             w - 2,
