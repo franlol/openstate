@@ -19,7 +19,7 @@ Apps connect through `client/` (a stand-in for the Redux DevTools extension) to 
   packages (`@openstate-devtools/cli-<os>-<cpu>`, run by the `npm/cli/openstate.js` launcher of `@openstate-devtools/cli`), the same
   binaries as archives for GitHub Releases and `install.sh`, and `@openstate-devtools/client`. Publishes nothing
 - Releasing: bump `version` in package.json, commit, push a tag `vX.Y.Z`. `.github/workflows/release.yml` publishes to
-  GitHub Releases, npm (trusted publishing, staged: approve each version on npmjs.com or with `npm stage approve`) and the Homebrew tap (`openstate-devtools/homebrew-tap`, deploy key in the
+  GitHub Releases, npm (trusted publishing) and the Homebrew tap (`openstate-devtools/homebrew-tap`, deploy key in the
   `TAP_DEPLOY_KEY` secret). `ci.yml` runs typecheck and tests on every push
 
 Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with built-in `WebSocket`).
