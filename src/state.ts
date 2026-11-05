@@ -858,14 +858,6 @@ export class AppState {
     })
   }
 
-  // `d` on the waiting screen: the sample apps join while openstate keeps listening, so a real app can still connect.
-  startDemo() {
-    if (this.store()) return
-    this.sources.push(...startMock(() => this.onData(), () => this.paused, () => this.settings.maxage))
-    this.notify(`demo apps running · real apps can still connect on :${this.settings.port}`)
-    this.onData()
-  }
-
   // ★ github in the help and the waiting screen. Starring needs GitHub's page, so open the repo there; over SSH the
   // browser would open on the other machine, so copy the link instead.
   openRepo() {

@@ -200,7 +200,6 @@ export function useGlobalKeys(s: AppState) {
       priority: 10,
       ...layer(s, [
         { key: "c", desc: "connect an app", group: "waiting", run: () => (s.connectCard = true) },
-        { key: "d", desc: "demo apps", group: "waiting", run: () => s.startDemo() },
         // The first page waiting for an answer, as shown under the logo.
         { key: "return", desc: "allow page", group: "waiting", run: () => s.waitingOrigin() && s.allowOrigin(s.waitingOrigin()!.origin) },
         { key: "x", desc: "block page", group: "waiting", run: () => s.waitingOrigin()?.access === "pending" && s.blockOrigin(s.waitingOrigin()!.origin) },

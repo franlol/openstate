@@ -139,7 +139,6 @@ export function Waiting() {
   const asking = s.waitingOrigin()
   const keys: Hint[] = [
     { key: "c", desc: "connect an app", run: () => (s.connectCard = true) },
-    { key: "d", desc: "demo", run: () => s.startDemo() },
     { key: "?", desc: "keys", run: () => (s.help = true) },
   ]
   return (

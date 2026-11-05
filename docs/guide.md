@@ -9,7 +9,6 @@ open at once. Built with [OpenTUI](https://opentui.com).
 npm i -g @openstate-devtools/cli         # or: brew tap openstate-devtools/tap && brew install openstate
                                          # or: curl -fsSL https://raw.githubusercontent.com/franlol/openstate/main/install.sh | sh
 openstate                                # waits for apps on ws://localhost:8000
-openstate --demo                         # three sample apps instead, no app needed
 ```
 
 Each installs a single binary with its runtime inside, so neither Bun nor Node is needed to run it. The script puts it in
