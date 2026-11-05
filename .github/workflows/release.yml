@@ -56,7 +56,8 @@ jobs:
             name=$(jq -r .name "$d/package.json")
             version=$(jq -r .version "$d/package.json")
             if npm view "$name@$version" version >/dev/null 2>&1; then echo "$name@$version is already published"; continue; fi
-            npm publish --access public --provenance "$d"
+            # Staged (approved on npmjs.com) when the trusted publisher only allows that.
+            npm publish --access public --provenance "$d" || npm stage publish --access public --provenance "$d"
           done
 
       - name: Homebrew tap
