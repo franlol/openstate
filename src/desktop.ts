@@ -36,7 +36,7 @@ export async function addDesktopEntry(): Promise<string> {
       "Type=Application",
       "Name=openstate",
       "Comment=Redux DevTools, in your terminal",
-      `Exec=${command()}`,
+      `Exec=${execArg(command())}`,
       // The launcher opens it in the default terminal.
       "Terminal=true",
       "Icon=openstate",
@@ -47,6 +47,14 @@ export async function addDesktopEntry(): Promise<string> {
   )
   return LINUX.entry
 }
+
+// One argument of a desktop entry's Exec: quoted, with the characters the spec reserves escaped (and those
+// backslashes doubled again, as the value is itself an escaped string).
+export const execArg = (s: string) =>
+  `"${s.replace(/["`$\\]/g, (c) => `\\${c}`).replace(/\\/g, "\\\\").replace(/%/g, "%%")}"`
+
+// A word for sh: single-quoted, any single quote closed, escaped and reopened.
+export const shArg = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
 
 // Spotlight lists apps, so a small one whose only job is to open Terminal running openstate.
 async function addMacApp(png: Uint8Array): Promise<string> {
@@ -68,9 +76,19 @@ async function addMacApp(png: Uint8Array): Promise<string> {
 `,
   )
   const launcher = join(contents, "MacOS", "openstate")
+  // The path reaches AppleScript as an argument, and Terminal's shell as its quoted form, so any path works.
   writeFileSync(
     launcher,
-    `#!/bin/sh\nosascript -e 'tell application "Terminal" to do script "${command()}"' -e 'tell application "Terminal" to activate'\n`,
+    `#!/bin/sh
+exec osascript - ${shArg(command())} <<'EOF'
+on run argv
+  tell application "Terminal"
+    do script quoted form of (item 1 of argv)
+    activate
+  end tell
+end run
+EOF
+`,
   )
   Bun.spawnSync(["chmod", "+x", launcher])
   // The icon, through the tools every Mac has; without them the app keeps the generic one.

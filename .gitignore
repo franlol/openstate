@@ -38,3 +38,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .agents/
 .claude/skills/
 openstate-*.json
+
+# test fixtures that stand in for installed libraries
+!test/fixtures/node_modules

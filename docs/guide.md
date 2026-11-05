@@ -82,7 +82,13 @@ openstate without other changes:
 
 It must come first because Redux Toolkit looks for the extension when it loads. Outside a browser (Bun, Node) the client
 defines `window` as `globalThis` so the libraries find it. The app shows up in the sources panel under its host (browser)
-or script name; it reconnects by itself if openstate starts later or restarts.
+or script name; it reconnects by itself if openstate starts later or restarts. Browsers log each failed attempt, so
+after a minute without openstate a page tries every 30 s, and at once when it gets the focus back.
+
+Each store shows up when it is made, with its `@@INIT`. React's Strict Mode makes the stores created inside `useState`
+twice and throws one away; that one does not show up. Each store is labelled with the library that made it (zustand,
+jotai, valtio, Redux Toolkit, NgRx, or the name of any other package), found on the call stack; a `lib` option names
+it yourself, e.g. zustand's `devtools(fn, { name: "cart", lib: "mine" })`.
 
 ```ts
 import { install } from "@openstate-devtools/client"

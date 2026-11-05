@@ -7,6 +7,7 @@
 // The import does nothing in production builds and while Next renders on the server; install() still does.
 import { instrument } from "@redux-devtools/instrument"
 import type { StoreEnhancer } from "redux"
+import { currentStack, libFromStack } from "./detect"
 import { PROTOCOL, toJSON, type AppMessage, type Entry, type LiftedState, type ServerMessage } from "./protocol"
 
 export type ClientOptions = {
@@ -17,7 +18,9 @@ export type ClientOptions = {
 }
 
 type Instance = {
+  // Mutable: a twin that acts first takes over the id of the one shown (see `twins`).
   id: string
+  acted: boolean
   // Sent on every (re)connect so openstate has the whole picture.
   init: () => AppMessage | null
   onServer: (m: ServerMessage) => void
@@ -59,6 +62,7 @@ const instances = new Map<string, Instance>()
 let socket: WebSocket | null = null
 let open = false
 let retry = 0
+let retryTimer: ReturnType<typeof setTimeout> | null = null
 let nextId = 1
 let queue: AppMessage[] = []
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -104,6 +108,8 @@ function flush() {
 const inits = () => [...instances.values()].flatMap((inst) => inst.init() ?? [])
 
 function connect() {
+  if (retryTimer) clearTimeout(retryTimer)
+  retryTimer = null
   if (typeof WebSocket === "undefined") return console.warn("[openstate] no WebSocket in this runtime; nothing is reported")
   const ws = new WebSocket(config.url)
   socket = ws
@@ -133,20 +139,72 @@ function connect() {
     if (socket !== ws) return
     open = false
     queue = []
-    // Keep retrying quietly: openstate may start after the app, or restart.
-    setTimeout(connect, Math.min(5000, 500 * 2 ** retry++))
+    // Keep retrying: openstate may start after the app, or restart. Browsers log every failed attempt, so after a
+    // minute without openstate the page tries every 30 s, and at once when it gets the focus back.
+    const wait = retry < 15 ? Math.min(5000, 500 * 2 ** retry) : 30_000
+    retry++
+    retryTimer = setTimeout(connect, wait)
   }
   ws.onerror = () => {}
 }
 
-function register(make: (id: string) => Instance): Instance {
-  const inst = make(String(nextId++))
+// React's Strict Mode runs useState's initializer twice and keeps one store: the first in React 19, one from a second
+// render in React 18. So of the stores made in one go with the same name, library and initial state only the first
+// shows, from the start; the others wait, and the first of them to act takes the place of the one shown if that
+// never acted. Stores that are really two show up apart as soon as both have acted.
+const twins = new Map<string, Instance>()
+const held = new Map<Instance, Instance>()
+let twinsTimer: ReturnType<typeof setTimeout> | null = null
+
+const shown = (inst: Instance) => instances.get(inst.id) === inst
+
+function show(inst: Instance) {
   instances.set(inst.id, inst)
-  return inst
+  const init = inst.init()
+  if (init) send(init)
+}
+
+// The initial state's top level, enough to tell twins from different stores made together.
+function shape(state: unknown): string {
+  if (!state || typeof state !== "object") return String(state)
+  return Object.entries(state)
+    .map(([k, v]) => `${k}:${v && typeof v === "object" ? "object" : typeof v === "function" ? "function" : String(v)}`)
+    .join(",")
+}
+
+function mount(inst: Instance, name: string, lib: string, state: unknown) {
+  twinsTimer ??= setTimeout(() => {
+    twins.clear()
+    twinsTimer = null
+  }, 0)
+  const key = `${lib}\0${name}\0${shape(state)}`
+  const first = twins.get(key)
+  if (!first) {
+    twins.set(key, inst)
+    return show(inst)
+  }
+  held.set(inst, first)
+}
+
+// Before a store's action goes out. True when the store has just shown up: its init carries that action already.
+function acting(inst: Instance): boolean {
+  if (inst.acted) return false
+  inst.acted = true
+  if (shown(inst)) return false
+  const first = held.get(inst)
+  held.delete(inst)
+  if (first && !first.acted && shown(first)) {
+    instances.delete(first.id)
+    inst.id = first.id
+    // Should it act after all, it shows up as a store of its own.
+    first.id = String(nextId++)
+  }
+  show(inst)
+  return true
 }
 
 // --- redux: the extension's enhancer, built on the same instrument ------------------------------------
-type EnhancerOptions = { name?: string; trace?: boolean; traceLimit?: number }
+type EnhancerOptions = { name?: string; lib?: string; trace?: boolean; traceLimit?: number }
 
 function enhancer(options: EnhancerOptions = {}): StoreEnhancer {
   return (next: any) => (reducer: any, preloaded?: any) => {
@@ -156,18 +214,22 @@ function enhancer(options: EnhancerOptions = {}): StoreEnhancer {
       traceLimit: options.traceLimit ?? 10,
     })(next)(reducer, preloaded) as any
     const lifted = store.liftedStore
-    const inst = register((id) => ({
-      id,
-      init: () => ({ t: "init", id, name: options.name ?? "redux", lib: "redux", kind: "lifted", lifted: lifted.getState() }),
+    const name = options.name ?? "redux"
+    const lib = options.lib ?? libFromStack(currentStack(), "redux") ?? "redux"
+    const inst: Instance = {
+      id: String(nextId++),
+      acted: false,
+      init: () => ({ t: "init", id: inst.id, name, lib, kind: "lifted", lifted: lifted.getState() }),
       onServer: (m) => {
         if (m.t === "lifted") lifted.dispatch(m.action)
         else if (m.t === "dispatch") devtoolsDispatch(() => store.dispatch(m.action))
       },
-    }))
+    }
     let prev: LiftedState = lifted.getState()
     lifted.subscribe(() => {
       const cur: LiftedState = lifted.getState()
       if (cur === prev) return
+      if (acting(inst)) return void (prev = cur)
       // One appended action goes alone, with how many old ones maxAge pushed out; anything else (skip,
       // sweep, reorder…) sends it all.
       const ids = cur.stagedActionIds
@@ -197,7 +259,7 @@ function enhancer(options: EnhancerOptions = {}): StoreEnhancer {
       } else send({ t: "lifted", id: inst.id, lifted: cur })
       prev = cur
     })
-    send(inst.init()!)
+    mount(inst, name, lib, lifted.getState().computedStates[0]?.state)
     return store
   }
 }
@@ -214,17 +276,21 @@ function devtoolsDispatch(run: () => void) {
 // --- connect(): zustand, jotai-devtools and hand-written integrations -------------------------------------
 type Listener = (message: any) => void
 
-function connectApi(options: { name?: string } = {}) {
+function connectApi(options: { name?: string; lib?: string } = {}) {
   const listeners = new Set<Listener>()
   // The state before the kept history, and the history: the last maxAge actions, sent again on (re)connect.
   let base: unknown
   let history: Entry[] = []
   let started = false
   let n = 0
-  const name = options.name ?? `store ${nextId}`
-  const inst = register((id) => ({
-    id,
-    init: () => (started ? { t: "init", id, name, lib: guessLib(name), kind: "connect", state: base, history: [...history] } : null),
+  // Unnamed stores are numbered in openstate, but are twins by the name they were given.
+  const name = options.name ?? ""
+  // Now, while the library calling connect() is on the stack; not later in init() or send().
+  const lib = options.lib ?? libFromStack(currentStack()) ?? guessLib(name)
+  const inst: Instance = {
+    id: String(nextId++),
+    acted: false,
+    init: () => (started ? { t: "init", id: inst.id, name: name || `store ${inst.id}`, lib, kind: "connect", state: base, history: [...history] } : null),
     onServer: (m) => {
       if (m.t !== "message") return
       // An ACTION message makes the app dispatch; whatever it sends back comes from openstate.
@@ -232,14 +298,16 @@ function connectApi(options: { name?: string } = {}) {
         for (const l of listeners) l(m.message)
       })
     },
-  }))
+  }
+  let mounted = false
   return {
     init(initial: unknown) {
       // Also how zustand answers openstate's rollback or import: a new start, as openstate already knows.
       base = initial
       history = []
       started = true
-      send(inst.init()!)
+      if (!mounted) return void ((mounted = true), mount(inst, name, lib, initial))
+      if (shown(inst)) send(inst.init()!)
     },
     send(action: string | { type: string } | null, next: unknown) {
       // send(null, liftedState) is how zustand acknowledges an import; there is nothing new to record.
@@ -247,8 +315,12 @@ function connectApi(options: { name?: string } = {}) {
       if (!started) {
         base = next
         started = true
-        send(inst.init()!)
       }
+      if (!mounted) {
+        mounted = true
+        mount(inst, name, lib, next)
+      }
+      acting(inst)
       const entry: Entry = {
         n: n++,
         action: typeof action === "string" ? { type: action } : action,
@@ -269,11 +341,12 @@ function connectApi(options: { name?: string } = {}) {
       listeners.clear()
     },
     error(message: string) {
-      console.warn(`[openstate] ${name}: ${message}`)
+      console.warn(`[openstate] ${name || `store ${inst.id}`}: ${message}`)
     },
   }
 }
 
+// No library on the stack (the app's own integration, or a bundle without paths): the store's name may say.
 const guessLib = (name: string) => (/jotai/i.test(name) ? "jotai" : /zustand/i.test(name) ? "zustand" : "store")
 
 // --- the global the libraries look for -------------------------------------------------------------------
@@ -310,6 +383,12 @@ export function install(options: ClientOptions = {}) {
   }
   connect()
 }
+
+// Back on the page after starting openstate: no waiting for the next attempt.
+if (typeof window !== "undefined" && typeof window.addEventListener === "function")
+  window.addEventListener("focus", () => {
+    if (retryTimer) connect()
+  })
 
 // On import, for development only: a production build would have every visitor's browser try localhost.
 if (!env.production && !env.nextServer) install()

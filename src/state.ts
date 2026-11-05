@@ -187,7 +187,7 @@ export class AppState {
       this.bridge = startBridge({ onChange: hooks[0], isPaused: hooks[1], maxAge: hooks[2], warn: (text) => this.notify(text, true) })
       this.sources = this.bridge.sources
       this.access = this.bridge.access
-      this.listenError = this.bridge.listen(this.settings.port, this.settings.lan)
+      this.listen()
     }
     this.activeKey = this.sources[0]?.stores[0]?.key ?? ""
     for (const st of this.allStores()) this.lastSeen.set(st.key, st.actions.length)
@@ -434,13 +434,27 @@ export class AppState {
       this.notify(`E: ${(e as Error).message}`, true)
     }
   }
+  // Listens on the port; when it is taken, finds out whether by another openstate, the usual case.
+  private listen(): string | null {
+    const port = this.settings.port
+    this.listenError = this.bridge!.listen(port, this.settings.lan)
+    if (this.listenError?.endsWith("in use"))
+      fetch(`http://localhost:${port}`, { signal: AbortSignal.timeout(1000) })
+        .then((res) => res.text())
+        .then((text) => {
+          if (!text.startsWith("openstate:") || this.settings.port !== port || !this.listenError) return
+          this.listenError = `another openstate is listening on port ${port}`
+          this.emit()
+        })
+        .catch(() => {})
+    return this.listenError
+  }
   applySettings(changed: Partial<Settings>) {
     Object.assign(this.settings, changed)
     if (changed.theme) this.theme = findTheme(changed.theme)
     if (changed.maxage !== undefined) this.bridge?.setMaxAge(changed.maxage)
     if ((changed.port !== undefined || changed.lan !== undefined) && this.bridge) {
-      this.listenError = this.bridge.listen(this.settings.port, this.settings.lan)
-      if (this.listenError) return this.notify(`E: ${this.listenError} · :set port=<another>`, true)
+      if (this.listen()) return this.notify(`E: ${this.listenError} · :set port=<another>`, true)
     }
     const names = Object.keys(changed) as OptionName[]
     const note = names.map((n) => format(n, this.settings)).join("  ")

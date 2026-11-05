@@ -11,6 +11,7 @@ const PORT = 18_130
 const URL = `ws://localhost:${PORT}`
 process.env.OPENSTATE_URL = URL
 const { install } = await import("../client/index")
+const { connectLikeZustand } = await import("./fixtures/node_modules/zustand/middleware")
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 async function until(ok: () => boolean, ms = 4000) {
@@ -45,8 +46,9 @@ describe("redux", () => {
   const store: any = createStore(reducer, (globalThis as any).__REDUX_DEVTOOLS_EXTENSION__({ name: "redux" }))
   const appStates = () => store.liftedStore.getState().computedStates.map((c: { state: { n: number } }) => c.state.n)
 
-  test("connects", async () => {
+  test("shows up at once, with its @@INIT", async () => {
     await until(() => !!storeNamed("redux"))
+    expect(states(storeNamed("redux"))).toEqual([0])
   })
 
   test("past maxAge only new actions travel, and the mirror matches the app", async () => {
@@ -98,6 +100,71 @@ describe("connect() stores", () => {
     // The last 50 (maxAge), as openstate would have kept them.
     expect(states(storeNamed("zustand store"))).toEqual(Array.from({ length: 50 }, (_, i) => 21 + i))
   }, 10_000)
+})
+
+describe("stores React makes twice", () => {
+  const reducer = (s = { n: 0 }, a: { type: string }) => (a.type === "inc" ? { n: s.n + 1 } : s)
+  const ext = (globalThis as any).__REDUX_DEVTOOLS_EXTENSION__
+  const named = (name: string) => bridge.sources.flatMap((s) => s.stores).filter((s) => s.name === name)
+
+  // React 19 keeps the first of the two stores Strict Mode makes.
+  test("one shows up at once, and the one thrown away never does", async () => {
+    const kept: any = createStore(reducer, ext({ name: "strict 19" }))
+    createStore(reducer, ext({ name: "strict 19" }))
+    await until(() => named("strict 19").length > 0)
+    await sleep(100)
+    expect(named("strict 19").map(states)).toEqual([[0]])
+    kept.dispatch({ type: "inc" })
+    await until(() => states(named("strict 19")[0]).length === 2)
+    expect(named("strict 19").map(states)).toEqual([[0, 1]])
+  })
+
+  // React 18 renders twice, and keeps a store from the second render.
+  test("a later twin that acts takes the place of the one shown", async () => {
+    createStore(reducer, ext({ name: "strict 18" }))
+    createStore(reducer, ext({ name: "strict 18" }))
+    const kept: any = createStore(reducer, ext({ name: "strict 18" }))
+    createStore(reducer, ext({ name: "strict 18" }))
+    await until(() => named("strict 18").length > 0)
+    kept.dispatch({ type: "inc" })
+    kept.dispatch({ type: "inc" })
+    await until(() => states(named("strict 18")[0]).length === 3)
+    await sleep(100)
+    expect(named("strict 18").map(states)).toEqual([[0, 1, 2]])
+  })
+
+  test("connect() stores too", async () => {
+    const shown = ext.connect({ name: "strict zustand" })
+    const dropped = ext.connect({ name: "strict zustand" })
+    shown.init({ n: 0 })
+    dropped.init({ n: 0 })
+    await until(() => named("strict zustand").length > 0)
+    shown.send({ type: "set" }, { n: 1 })
+    await until(() => states(named("strict zustand")[0]).length === 2)
+    await sleep(100)
+    expect(named("strict zustand").map(states)).toEqual([[0, 1]])
+  })
+
+  test("different stores made together all show up", async () => {
+    const a = ext.connect()
+    const b = ext.connect()
+    a.init({ n: 10 })
+    b.init({ n: 20 })
+    const unnamed = () => bridge.sources.flatMap((s) => s.stores).filter((s) => /^store \d+$/.test(s.name))
+    await until(() => unnamed().length === 2)
+    expect(unnamed().map(states).sort()).toEqual([[10], [20]])
+  })
+})
+
+test("connect() stores are labelled with the library that calls connect()", async () => {
+  const conn = connectLikeZustand("menuUi")
+  conn.init({ open: false })
+  await until(() => !!storeNamed("menuUi"))
+  expect(storeNamed("menuUi")!.lib).toBe("zustand")
+  const own = (globalThis as any).__REDUX_DEVTOOLS_EXTENSION__.connect({ name: "custom", lib: "mine" })
+  own.init({})
+  await until(() => !!storeNamed("custom"))
+  expect(storeNamed("custom")!.lib).toBe("mine")
 })
 
 describe("Redux DevTools remote", () => {
