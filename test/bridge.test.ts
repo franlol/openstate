@@ -31,11 +31,13 @@ afterAll(() => bridge.close())
 const storeNamed = (name: string) => bridge.sources.flatMap((s) => s.stores).find((s) => s.name === name)
 const states = (st: Store | undefined) => st?.actions.map((a) => (a.state as { n: number }).n) ?? []
 
-// What goes out of the app, counted by message.
+// What goes out of the app, counted by message. Stores of other test files share the client (react.test.ts runs first
+// on some machines): their React contexts are left out.
 const sent: Record<string, number> = {}
 const realSend = WebSocket.prototype.send
 WebSocket.prototype.send = function (data) {
-  for (const m of [JSON.parse(String(data))].flat()) sent[m.t ?? m.event] = (sent[m.t ?? m.event] ?? 0) + 1
+  for (const m of [JSON.parse(String(data))].flat())
+    if (m.lib !== "react context") sent[m.t ?? m.event] = (sent[m.t ?? m.event] ?? 0) + 1
   return realSend.call(this, data)
 }
 const resetSent = () => Object.keys(sent).forEach((k) => delete sent[k])
