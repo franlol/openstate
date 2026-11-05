@@ -1,5 +1,5 @@
 # Pushing a tag vX.Y.Z (the version in package.json) releases it: the binaries and SHA256SUMS to GitHub Releases, the
-# packages to npm (trusted publishing, so no token), and the formula to openstate-devtools/homebrew-tap.
+# packages to npm (trusted publishing, so no token; staged, each version waits for approval on npmjs.com), and the formula to openstate-devtools/homebrew-tap.
 name: release
 
 on:
@@ -51,7 +51,7 @@ jobs:
             name=$(jq -r .name "$d/package.json")
             version=$(jq -r .version "$d/package.json")
             if npm view "$name@$version" version >/dev/null 2>&1; then echo "$name@$version is already published"; continue; fi
-            npm publish --access public --provenance "$d"
+            npm stage publish --access public --provenance "$d"
           done
 
       - name: Homebrew tap
