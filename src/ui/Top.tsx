@@ -69,55 +69,90 @@ function title(s: AppState): Part[] {
 const BARS = "▁▂▃▄▅▆▇█"
 const LABEL_W = 14
 
-type Cell = { weight: number; actions: Action[]; colors: Map<number, number>; offline: boolean }
+// A cell is one second, or a share of a pause: a stretch with no actions longer than GAP_MIN seconds is drawn
+// GAP_W cells wide whatever it lasted, so activity is not lost in idle time.
+type Cell = { from: number; to: number; gap: boolean; weight: number; actions: Action[]; colors: Map<number, number>; offline: boolean }
+const GAP_MIN = 4
+const GAP_W = 3
 
-// One-second buckets anchored to the first action, so past cells never move: the chart
-// fills from the left and scrolls only once it reaches the right edge. A cell's weight
-// is how much state changed in it, scaled against the whole history.
+// The columns from the first action to now, in seconds since the epoch: one per second, or a pause's GAP_W.
+export function columns(seconds: number[], now: number): { from: number; to: number; gap: boolean }[] {
+  const cols: { from: number; to: number; gap: boolean }[] = []
+  const marks = [...new Set([...seconds, now])].sort((a, b) => a - b)
+  marks.forEach((sec, i) => {
+    const prev = marks[i - 1]
+    if (prev !== undefined && sec - prev - 1 > GAP_MIN) for (let k = 0; k < GAP_W; k++) cols.push({ from: prev + 1, to: sec - 1, gap: true })
+    else if (prev !== undefined) for (let x = prev + 1; x < sec; x++) cols.push({ from: x, to: x, gap: false })
+    cols.push({ from: sec, to: sec, gap: false })
+  })
+  return cols
+}
+
+// Cells anchored to the first action, so past ones never move: the chart fills from the left and scrolls only once it
+// reaches the right edge. A cell's weight is how much state changed in it, scaled against the whole history.
 function trackModel(s: AppState, cells: number) {
   const tl = s.timeline()
   const sel = s.selected()
-  const origin = Math.floor((tl[0]?.time ?? Date.now()) / 1000)
-  const cellOf = (time: number) => Math.floor(time / 1000) - origin
-  const nowCell = cellOf(Date.now())
+  const secOf = (time: number) => Math.floor(time / 1000)
+  const nowSec = secOf(Date.now())
+  const { cols, colOf } = s.cached("track-cols", [tl, nowSec, s.dataRev], () => {
+    const cols = columns(
+      tl.map((a) => secOf(a.time)),
+      nowSec,
+    )
+    // The column of a second: its own, or the first of the pause it falls in.
+    const index = new Map<number, number>()
+    cols.forEach((c, i) => !c.gap && index.set(c.from, i))
+    const colOf = (time: number) => {
+      const sec = secOf(time)
+      const own = index.get(sec)
+      if (own !== undefined) return own
+      const i = cols.findIndex((c) => c.to >= sec)
+      return i < 0 ? cols.length - 1 : i
+    }
+    return { cols, colOf }
+  })
   // Live, the window ends at "now". Time travelling, it stays put and only slides the
   // minimum needed to keep the cursor (plus a small margin) in view.
   const v = s.view()
-  const latest = Math.max(0, nowCell - cells + 1)
+  const latest = Math.max(0, cols.length - cells)
   let start = latest
   if (v.cursor !== null && sel) {
-    start = v.trackFrom === null ? latest : cellOf(v.trackFrom)
-    const c = cellOf(sel.time)
+    start = v.trackFrom === null ? latest : colOf(v.trackFrom)
+    const c = colOf(sel.time)
     const margin = Math.min(4, Math.floor(cells / 6))
     if (c < start + margin) start = c - margin
     else if (c > start + cells - 1 - margin) start = c - cells + 1 + margin
     start = Math.max(0, Math.min(latest, start))
   }
-  v.trackFrom = (origin + start) * 1000
-  const last = Math.min(cells - 1, nowCell - start)
-  const timeOf = (c: number) => (origin + start + c) * 1000
+  v.trackFrom = cols[start]!.from * 1000
+  const last = Math.min(cells - 1, cols.length - 1 - start)
+  const timeOf = (c: number) => cols[start + c]!.from * 1000
 
   // Rebuilt when the data, the window or the current second changes, not for every animation frame.
-  const { grid, peak } = s.cached("track", [tl, cells, start, nowCell, s.dataRev, s.merge], () => {
-    const perCell = new Map<number, number>()
-    for (const a of tl) perCell.set(cellOf(a.time), (perCell.get(cellOf(a.time)) ?? 0) + changeCount(a))
-    const peak = Math.max(3, ...perCell.values())
+  const { grid, peak } = s.cached("track", [cols, cells, start, s.merge], () => {
+    const perCol = new Map<number, number>()
+    for (const a of tl) perCol.set(colOf(a.time), (perCol.get(colOf(a.time)) ?? 0) + changeCount(a))
+    const peak = Math.max(3, ...perCol.values())
     const watched = s.merge ? s.sources : s.sources.filter((x) => x.id === s.sourceOf(s.activeKey)?.id)
     const grid: Cell[] = Array.from({ length: cells }, (_, c) => {
-      const from = timeOf(c)
+      const col = cols[start + c]
+      const from = (col?.from ?? 0) * 1000
+      const to = ((col?.to ?? 0) + 1) * 1000
       return {
-        weight: perCell.get(start + c) ?? 0,
+        from,
+        to,
+        gap: !!col?.gap,
+        weight: perCol.get(start + c) ?? 0,
         actions: [],
         colors: new Map(),
         offline:
           c <= last &&
-          watched.some((src) =>
-            src.links.some((l, i) => !l.connected && l.time < from + 1000 && (src.links[i + 1]?.time ?? Date.now()) > from),
-          ),
+          watched.some((src) => src.links.some((l, i) => !l.connected && l.time < to && (src.links[i + 1]?.time ?? Date.now()) > from)),
       }
     })
     for (const a of tl) {
-      const g = grid[cellOf(a.time) - start]
+      const g = grid[colOf(a.time) - start]
       if (!g) continue
       g.actions.push(a)
       const color = s.sourceOf(a.storeKey)?.color ?? 0
@@ -125,8 +160,16 @@ function trackModel(s: AppState, cells: number) {
     }
     return { grid, peak }
   })
-  const cur = sel ? cellOf(sel.time) - start : last
-  return { tl, last, cur, peak, grid, timeOf, more: { before: start > 0, after: last < nowCell - start } }
+  const cur = sel ? colOf(sel.time) - start : last
+  return { tl, last, cur, peak, grid, timeOf, more: { before: start > 0, after: start + cells < cols.length } }
+}
+
+// 1m 02s, 34s, 2h 05m.
+function duration(ms: number): string {
+  const sec = Math.round(ms / 1000)
+  if (sec < 60) return `${sec}s`
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, "0")}s`
+  return `${Math.floor(sec / 3600)}h ${String(Math.floor(sec / 60) % 60).padStart(2, "0")}m`
 }
 
 // Activity over time plus the time cursor; click or drag to travel, hover to see what happened.
@@ -146,6 +189,7 @@ export function Track({ width }: { width: number }) {
   const row = (ch: (g: Cell, c: number) => Part): Part[] => grid.map((g, c): Part => (c > last ? [" ", t.dim] : ch(g, c)))
 
   const bars = row((g, c) => {
+    if (g.gap) return [" ", t.dim]
     const fg = c === cur || c === hovered ? t.fg : c > cur ? t.dim : base(g)
     return [BARS[Math.max(0, Math.min(8, Math.ceil((g.weight / peak) * 8)) - 1)]!, g.weight ? fg : t.dim]
   })
@@ -153,6 +197,8 @@ export function Track({ width }: { width: number }) {
     if (c === cur) return ["●", t.fg, BOLD]
     if (g.actions.some((a) => a.skipped)) return ["×", t.warn, BOLD]
     if (g.offline) return ["┄", t.remove]
+    // A pause: the line breaks, so time is plainly not to scale there.
+    if (g.gap) return ["╌", c < cur ? t.accent : t.dim]
     return c < cur ? ["━", t.accent] : ["─", t.dim]
   })
   // Arrows tell there is more history outside the window.
@@ -176,7 +222,9 @@ export function Track({ width }: { width: number }) {
           [changes ? `  ±${changes}` : "", t.muted],
           [`  ${clock(timeOf(hovered!))}`, t.dim],
         ]
-      : [[`${clock(timeOf(hovered!))}  nothing happened`, t.dim]]
+      : g.gap
+        ? [[`nothing for ${duration(g.to - g.from)}  ${clock(g.from)} → ${clock(g.to)}`, t.dim]]
+        : [[`${clock(timeOf(hovered!))}  nothing happened`, t.dim]]
     const len = text.reduce((n, [x]) => n + x.length, 0)
     const col = 1 + hovered!
     // Text runs right of the marker when it fits, otherwise it ends at the marker.
@@ -199,7 +247,7 @@ export function Track({ width }: { width: number }) {
       const i = inCell.indexOf(s.selected()!)
       best = i < 0 ? inCell[0]! : cycle ? inCell[(i + 1) % inCell.length]! : inCell[i]!
     } else {
-      const target = timeOf(c) + 500
+      const target = (grid[c]!.from + grid[c]!.to) / 2
       best = tl[0]!
       for (const a of tl) if (Math.abs(a.time - target) < Math.abs(best.time - target)) best = a
     }
