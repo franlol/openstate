@@ -76,7 +76,14 @@ export function updateCommand(): string[] | null {
 // The same command again, for the restart after an update: a binary is its own runtime, so its first argument is
 // the embedded script and is left out.
 export function sameCommand(): string[] {
-  return [process.execPath, ...process.argv.slice(COMPILED ? 2 : 1)]
+  return [COMPILED ? binaryPath() : process.execPath, ...process.argv.slice(COMPILED ? 2 : 1)]
+}
+
+// This binary, by a path that outlives an update: Homebrew installs each version in its own Cellar folder and keeps
+// the old one, so its bin link instead, which points at the newest.
+export function binaryPath(exec = process.execPath): string {
+  const [prefix, cellar] = exec.split("/Cellar/")
+  return cellar ? `${prefix}/bin/openstate` : exec
 }
 
 // Package managers say what they are doing but not how far along they are, so the bar moves by stage and creeps

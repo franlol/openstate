@@ -4,7 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import icon from "../assets/icon-512.png" with { type: "file" }
-import { COMPILED } from "./update"
+import { binaryPath, COMPILED } from "./update"
 
 const home = homedir()
 const dataHome = process.env.XDG_DATA_HOME || join(home, ".local", "share")
@@ -14,13 +14,8 @@ const LINUX = {
 }
 const MAC_APP = join(home, "Applications", "openstate.app")
 
-// The binary itself, so the entry works whatever PATH the launcher starts with; from source, the command. Homebrew's
-// Cellar path changes with every version, so its bin link instead.
-const command = () => {
-  if (!COMPILED) return "openstate"
-  const [prefix, cellar] = process.execPath.split("/Cellar/")
-  return cellar ? `${prefix}/bin/openstate` : process.execPath
-}
+// The binary itself, so the entry works whatever PATH the launcher starts with; from source, the command.
+const command = () => (COMPILED ? binaryPath() : "openstate")
 
 export async function addDesktopEntry(): Promise<string> {
   const png = await Bun.file(icon).bytes()
