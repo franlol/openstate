@@ -4,6 +4,7 @@
 //   npm/client/              @openstate-devtools/client, compiled for bundlers and Node
 //   openstate-<os>-<cpu>.tar.gz   the same binaries for GitHub Releases and install.sh
 //   SHA256SUMS               their checksums, which install.sh checks
+//   openstate.rb             the Homebrew formula for those archives, for Formula/ in openstate-devtools/homebrew-tap
 // Run with `bun run release`; it publishes nothing. The native OpenTUI packages for every target must be installed:
 // `bun install --os="*" --cpu="*"`.
 import { $ } from "bun"
@@ -66,6 +67,51 @@ for (const t of TARGETS) {
 const archives = TARGETS.map((t) => `openstate-${t.os}-${t.cpu}.tar.gz`)
 const sums = archives.map((f) => `${createHash("sha256").update(readFileSync(join(OUT, f))).digest("hex")}  ${f}`)
 writeFileSync(join(OUT, "SHA256SUMS"), sums.join("\n") + "\n")
+
+// Homebrew installs the binary as it is; Formula/openstate.rb in the tap.
+const sumOf = (os: string, cpu: string) => sums[archives.indexOf(`openstate-${os}-${cpu}.tar.gz`)]!.split(" ")[0]
+const bottle = (os: string, cpu: string) => `      url "${repository.url.replace(/^git\+/, "").replace(/\.git$/, "")}/releases/download/v${version}/openstate-${os}-${cpu}.tar.gz"
+      sha256 "${sumOf(os, cpu)}"`
+writeFileSync(
+  join(OUT, "openstate.rb"),
+  `class Openstate < Formula
+  desc "${root.description.replace(/^An? (.)/, (_, c) => c.toUpperCase())}"
+  homepage "${root.homepage}"
+  version "${version}"
+  license "${root.license}"
+
+  on_macos do
+    on_arm do
+${bottle("darwin", "arm64")}
+    end
+    on_intel do
+${bottle("darwin", "x64")}
+    end
+  end
+
+  on_linux do
+    on_arm do
+${bottle("linux", "arm64")}
+    end
+    on_intel do
+${bottle("linux", "x64")}
+    end
+  end
+
+  def install
+    bin.install "openstate"
+  end
+
+  def caveats
+    "To open openstate from Spotlight or the app launcher: openstate --desktop"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/openstate --version")
+  end
+end
+`,
+)
 
 // The launcher: every platform package is optional, so npm installs only the one that fits.
 const cli = join(OUT, "npm", "cli")

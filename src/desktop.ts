@@ -14,8 +14,13 @@ const LINUX = {
 }
 const MAC_APP = join(home, "Applications", "openstate.app")
 
-// The binary itself, so the entry works whatever PATH the launcher starts with; from source, the command.
-const command = () => (COMPILED ? process.execPath : "openstate")
+// The binary itself, so the entry works whatever PATH the launcher starts with; from source, the command. Homebrew's
+// Cellar path changes with every version, so its bin link instead.
+const command = () => {
+  if (!COMPILED) return "openstate"
+  const [prefix, cellar] = process.execPath.split("/Cellar/")
+  return cellar ? `${prefix}/bin/openstate` : process.execPath
+}
 
 export async function addDesktopEntry(): Promise<string> {
   const png = await Bun.file(icon).bytes()

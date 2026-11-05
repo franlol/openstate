@@ -16,6 +16,13 @@
 npm i -g @openstate-devtools/cli
 ```
 
+or with Homebrew
+
+```sh
+brew tap openstate-devtools/tap
+brew install openstate
+```
+
 or
 
 ```sh
@@ -23,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/franlol/openstate/main/install.sh |
 ```
 
 Then run `openstate`. It is a single binary: no Bun or Node needed to run it.
-The script also adds it to your app launcher; with npm, `openstate --desktop` does.
+The script also adds it to your app launcher; with npm or Homebrew, `openstate --desktop` does.
 
 ## Connect your app
 

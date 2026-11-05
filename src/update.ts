@@ -58,7 +58,7 @@ export function newer(a: string, b: string): boolean {
 }
 
 // The command that updates this copy, from where its binary is installed: by a package manager (inside
-// node_modules) or by the install script. Null when it runs from a checkout of the repo.
+// node_modules), by Homebrew (its Cellar) or by the install script. Null when it runs from a checkout of the repo.
 export function updateCommand(): string[] | null {
   if (!COMPILED) return null
   let path = process.execPath
@@ -66,6 +66,7 @@ export function updateCommand(): string[] | null {
     path = realpathSync(path)
   } catch {}
   const spec = `${PACKAGE}@latest`
+  if (path.includes("/Cellar/")) return ["brew", "upgrade", "openstate"]
   if (!path.includes("node_modules")) return ["sh", "-c", `curl -fsSL ${INSTALL_SCRIPT} | sh`]
   if (path.includes(".bun")) return ["bun", "add", "-g", spec]
   if (path.includes("pnpm")) return ["pnpm", "add", "-g", spec]

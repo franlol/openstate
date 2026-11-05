@@ -6,12 +6,13 @@ open at once. Built with [OpenTUI](https://opentui.com).
 ## Run
 
 ```bash
-npm i -g @openstate-devtools/cli          # or: curl -fsSL https://raw.githubusercontent.com/franlol/openstate/main/install.sh | sh
-openstate                        # waits for apps on ws://localhost:8000
-openstate --demo                 # three sample apps instead, no app needed
+npm i -g @openstate-devtools/cli         # or: brew tap openstate-devtools/tap && brew install openstate
+                                         # or: curl -fsSL https://raw.githubusercontent.com/franlol/openstate/main/install.sh | sh
+openstate                                # waits for apps on ws://localhost:8000
+openstate --demo                         # three sample apps instead, no app needed
 ```
 
-Both install a single binary with its runtime inside, so neither Bun nor Node is needed to run it. The script puts it in
+Each installs a single binary with its runtime inside, so neither Bun nor Node is needed to run it. The script puts it in
 `~/.local/bin` (`OPENSTATE_INSTALL` picks another folder, `OPENSTATE_VERSION` a version) and adds openstate to the app
 launcher, opening in a terminal: a `.desktop` entry on Linux, `~/Applications/openstate.app` for Spotlight on macOS.
 `openstate --desktop` adds that entry (after an npm install, say), `openstate --no-desktop` takes it out.
