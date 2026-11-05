@@ -75,10 +75,11 @@ type Cell = { from: number; to: number; gap: boolean; weight: number; actions: A
 const GAP_MIN = 4
 const GAP_W = 3
 
-// The columns from the first action to now, in seconds since the epoch: one per second, or a pause's GAP_W.
-export function columns(seconds: number[], now: number): { from: number; to: number; gap: boolean }[] {
+// The columns from the first action to the last, in seconds since the epoch: one per second, or a pause's GAP_W.
+// Idle time after the last action is not drawn: it would only be an empty pause.
+export function columns(seconds: number[]): { from: number; to: number; gap: boolean }[] {
   const cols: { from: number; to: number; gap: boolean }[] = []
-  const marks = [...new Set([...seconds, now])].sort((a, b) => a - b)
+  const marks = [...new Set(seconds)].sort((a, b) => a - b)
   marks.forEach((sec, i) => {
     const prev = marks[i - 1]
     if (prev !== undefined && sec - prev - 1 > GAP_MIN) for (let k = 0; k < GAP_W; k++) cols.push({ from: prev + 1, to: sec - 1, gap: true })
@@ -94,12 +95,9 @@ function trackModel(s: AppState, cells: number) {
   const tl = s.timeline()
   const sel = s.selected()
   const secOf = (time: number) => Math.floor(time / 1000)
-  const nowSec = secOf(Date.now())
-  const { cols, colOf } = s.cached("track-cols", [tl, nowSec, s.dataRev], () => {
-    const cols = columns(
-      tl.map((a) => secOf(a.time)),
-      nowSec,
-    )
+  // Without actions yet, a single column for now.
+  const { cols, colOf } = s.cached("track-cols", [tl, tl.length, s.dataRev], () => {
+    const cols = columns(tl.length ? tl.map((a) => secOf(a.time)) : [secOf(Date.now())])
     // The column of a second: its own, or the first of the pause it falls in.
     const index = new Map<number, number>()
     cols.forEach((c, i) => !c.gap && index.set(c.from, i))
@@ -112,7 +110,7 @@ function trackModel(s: AppState, cells: number) {
     }
     return { cols, colOf }
   })
-  // Live, the window ends at "now". Time travelling, it stays put and only slides the
+  // Live, the window ends at the last action. Time travelling, it stays put and only slides the
   // minimum needed to keep the cursor (plus a small margin) in view.
   const v = s.view()
   const latest = Math.max(0, cols.length - cells)
