@@ -1,4 +1,4 @@
-// The bridge to real apps: a WebSocket server that openstate/client connects to, and that also speaks the
+// The bridge to real apps: a WebSocket server that @openstate/client connects to, and that also speaks the
 // Redux DevTools remote protocol (SocketCluster), so apps set up for remote devtools connect unchanged.
 // Each connection is a source; each store it reports is a Store whose StoreConn talks back over the socket.
 import type { Server, ServerWebSocket } from "bun"
@@ -17,7 +17,7 @@ type Conn = {
   // A blocked page: kept connected, so its client does not keep retrying, and its frames kept like a waiting
   // page's (up to HELD_MAX) in case it is let in after all.
   parked?: boolean
-  // Decided by the first frame: openstate/client says hello, a remote devtools client starts a SocketCluster handshake.
+  // Decided by the first frame: @openstate/client says hello, a remote devtools client starts a SocketCluster handshake.
   proto?: "openstate" | "remote"
 }
 type LiftedAction = { type: string; [k: string]: unknown }
@@ -86,7 +86,7 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
         const blocked = ws.data.parked
         ws.data.parked = undefined
         // Those waiting or blocked get in with what they have sent so far. One that sent more than was kept is
-        // asked to reconnect and start over instead; openstate/client does so at once.
+        // asked to reconnect and start over instead; @openstate/client does so at once.
         const held = ws.data.held
         ws.data.held = undefined
         if (held) for (const text of held) handle(ws, text)
@@ -149,7 +149,7 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
 
   const sendTo = (ws: Socket, m: ServerMessage) => ws.send(JSON.stringify(m))
   const lifted = (st: Store, action: LiftedAction) => links.get(st)!.out.lifted(action)
-  // openstate/client: the instance id says which store of the app.
+  // @openstate/client: the instance id says which store of the app.
   const clientOut = (l: Link): Link["out"] => ({
     lifted: (action) => sendTo(l.ws, { t: "lifted", id: l.instanceId, action }),
     dispatch: (action) => sendTo(l.ws, { t: "dispatch", id: l.instanceId, action }),
@@ -513,7 +513,7 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
           port,
           fetch(req, srv) {
             if (srv.upgrade(req, { data: { source: null, origin: req.headers.get("origin") ?? undefined } })) return
-            return new Response("openstate: connect with openstate/client over WebSocket\n", { status: 426 })
+            return new Response("openstate: connect with @openstate/client over WebSocket\n", { status: 426 })
           },
           websocket: {
             open(ws) {

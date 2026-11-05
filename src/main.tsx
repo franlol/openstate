@@ -6,7 +6,28 @@ import { KeymapProvider } from "@opentui/keymap/react"
 import { createRoot } from "@opentui/react"
 import { loadSettings } from "./settings"
 import { AppState, commands } from "./state"
+import { sameCommand, VERSION } from "./update"
 import { App, AppContext } from "./ui/App"
+
+// Before the terminal is taken over, so scripts (install.sh) can ask without opening the UI.
+if (process.argv.includes("--version") || process.argv.includes("-v")) {
+  console.log(`openstate ${VERSION}`)
+  process.exit(0)
+}
+if (process.argv.includes("--desktop")) {
+  const { addDesktopEntry } = await import("./desktop")
+  await addDesktopEntry().then(
+    (at) => console.log(`openstate is in your app launcher (${at})`),
+    (e) => (console.error(`openstate: ${(e as Error).message}`), process.exit(1)),
+  )
+  process.exit(0)
+}
+if (process.argv.includes("--no-desktop")) {
+  const { removeDesktopEntry } = await import("./desktop")
+  removeDesktopEntry()
+  console.log("openstate is out of your app launcher")
+  process.exit(0)
+}
 
 const renderer = await createCliRenderer({ exitOnCtrlC: true, targetFps: 60 })
 const keymap = createDefaultOpenTuiKeymap(renderer)
@@ -44,7 +65,7 @@ state.onRestart = () => ((restart = true), renderer.destroy())
 renderer.once("destroy", () => {
   renderer.closed.finally(async () => {
     if (!restart) process.exit(0)
-    const next = Bun.spawn([process.execPath, ...process.argv.slice(1)], { stdio: ["inherit", "inherit", "inherit"] })
+    const next = Bun.spawn(sameCommand(), { stdio: ["inherit", "inherit", "inherit"] })
     process.exit(await next.exited)
   })
 })

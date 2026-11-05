@@ -2,6 +2,7 @@
   "name": "openstate",
   "version": "0.1.0",
   "description": "A terminal UI to inspect and time-travel app state, Redux DevTools compatible",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/franlol/openstate.git"
@@ -24,7 +25,8 @@
     "start": "NODE_ENV=production bun src/main.tsx",
     "typecheck": "tsc --noEmit",
     "build": "bun build client/index.ts --outdir dist/client --packages external --env disable && tsc -p tsconfig.client.json",
-    "demo": "NODE_ENV=production bun src/main.tsx --demo"
+    "demo": "NODE_ENV=production bun src/main.tsx --demo",
+    "release": "NODE_ENV=production bun scripts/release.ts"
   },
   "dependencies": {
     "@opentui/core": "^0.8.2",

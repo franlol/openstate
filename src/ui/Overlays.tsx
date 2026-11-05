@@ -186,8 +186,8 @@ export function ConnectCard({ width }: { width: number }) {
   const code = (text: string, note = ""): Part[] => [[`  ${text}`, t.add], [note ? `   ${note}` : "", t.dim]]
   const lines: Part[][] = [
     head("Redux, zustand or jotai"),
-    code("npm install openstate"),
-    code('import "openstate/client"', "first import of the app"),
+    code("npm i -D @openstate/client"),
+    code('import "@openstate/client"', "first import of the app"),
     [],
     head("Already using @redux-devtools/remote"),
     [[port === 8000 ? "  Nothing to add: it already sends to port 8000." : `  Nothing to add but port: ${port} in its options.`, t.muted]],

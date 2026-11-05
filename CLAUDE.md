@@ -10,10 +10,13 @@ Apps connect through `client/` (a stand-in for the Redux DevTools extension) to 
   command run React's production build (`NODE_ENV=production`, set before Bun starts: it decides how JSX compiles);
   `dev` keeps the development build, several times slower
 - `bun run typecheck` — must pass before finishing a change
-- `bun run build` — compiles `openstate/client` to `dist/client` (JS + types) for bundlers such as Next, which do not
+- `bun run build` — compiles `@openstate/client` to `dist/client` (JS + types) for bundlers such as Next, which do not
   compile TypeScript from `node_modules`; Bun imports `client/index.ts` directly. `--env disable` keeps
   `process.env.NODE_ENV` for the app's bundler to replace instead of Bun's own value
 - `OPENSTATE_DEBUG=debug.log bun run start` — logs keymap warnings/errors and how each key was dispatched
+- `bun run release` — `scripts/release.ts` builds `release/`: a `bun build --compile` binary per platform as npm
+  packages (`@openstate/cli-<os>-<cpu>`, run by the `npm/cli/openstate.js` launcher of `@openstate/cli`), the same
+  binaries as archives for GitHub Releases and `install.sh`, and `@openstate/client`. Publishes nothing
 
 Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with built-in `WebSocket`).
 
@@ -24,17 +27,20 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
 - `src/model.ts` — data types, structural diff, tree flattening, and `StoreConn`: the commands openstate sends to an
   app (dispatch, skip, commit, revert, sweep, lock). The app owns history and recomputes states, as in Redux DevTools
 - `src/history.ts` — `:export` / `:import` in Redux DevTools' file format (lifted state inside `payload`)
-- `src/bridge.ts` — WebSocket server (`:set port`). Speaks openstate/client's protocol and Redux DevTools remote
+- `src/bridge.ts` — WebSocket server (`:set port`). Speaks @openstate/client's protocol and Redux DevTools remote
   (SocketCluster frames, jsan payloads), told apart by the first frame. Redux stores mirror the app's lifted state and send lifted actions back;
   `connect()` stores (zustand…) keep their history here and throw for what needs a reducer (skip, reorder, lock).
   Pages from another origin are held until allowed (`Access` in `src/model.ts`, saved to the `origins` file)
-- `client/` — `openstate/client`: installs `__REDUX_DEVTOOLS_EXTENSION__`/`_COMPOSE__`, built on `@redux-devtools/instrument`;
+- `client/` — `@openstate/client`: installs `__REDUX_DEVTOOLS_EXTENSION__`/`_COMPOSE__`, built on `@redux-devtools/instrument`;
   `client/protocol.ts` holds the messages both sides speak
 - `src/mock.ts` — fake apps with deterministic reducers implementing `StoreConn`; the real bridge must match it
 - `src/settings.ts` — `:set` options (definitions, vim-style parser, config file at `~/.config/openstate/config`).
   A new option needs its entry in `OPTIONS`, `Settings` and `DEFAULTS`; the card, completion and file follow
 - `src/update.ts` — `:update`: latest version from npm (`npm_config_registry` points it at a local fake), the install
-  command from where openstate is installed, and the install's progress; `src/main.tsx` restarts into the new version
+  command from where the binary is installed (a package manager, or install.sh again; none when run from source), and
+  the install's progress; `src/main.tsx` restarts into the new version
+- `src/desktop.ts` — `--desktop` / `--no-desktop`: the app launcher entry (Linux `.desktop`, macOS `.app`), with
+  `assets/icon-512.png` embedded in the binary (`assets/icon.svg` is the source)
 - `src/theme.ts` — theme tokens; never hardcode colours in components
 - `src/ui/keys.ts` — every keybinding, also feeds the help overlay and status hints
 - `src/ui/kit.tsx` — `Line`/`Part` rendering helpers (`fit`, `spread`), syntax styles

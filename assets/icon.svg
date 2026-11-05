@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- openstate: the terminal prompt and a state tree, on the app's background -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#0d0f14"/>
+  <rect x="16.5" y="16.5" width="479" height="479" rx="111.5" fill="none" stroke="#232832"/>
+  <g transform="translate(96 96) scale(3.2)">
+    <path d="M12 30 L32 50 L12 70" fill="none" stroke="#7c6cff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M54 28 V76 M54 52 H78 M54 76 H78" fill="none" stroke="#3b414c" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="54" cy="26" r="8" fill="#d7dae0"/>
+    <circle cx="80" cy="52" r="8" fill="#3fd6c8"/>
+    <circle cx="80" cy="76" r="8" fill="#7c6cff"/>
+  </g>
+</svg>

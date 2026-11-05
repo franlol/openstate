@@ -3,6 +3,11 @@ import { realpathSync } from "node:fs"
 import pkg from "../package.json" with { type: "json" }
 
 export const VERSION: string = pkg.version
+// The package openstate is installed from; the repository's own package.json is only for working on it.
+export const PACKAGE = "@openstate/cli"
+export const INSTALL_SCRIPT = "https://raw.githubusercontent.com/franlol/openstate/main/install.sh"
+// A `bun build --compile` binary, as published; its own code lives in Bun's embedded file system.
+export const COMPILED = import.meta.dir.includes("$bunfs") || import.meta.dir.includes("~BUN")
 
 // npm's own variable, so a mirror or a local registry works as it does for npm.
 const REGISTRY = (process.env.npm_config_registry || "https://registry.npmjs.org").replace(/\/$/, "")
@@ -17,7 +22,7 @@ const repoOf = (p: { repository?: unknown }) => {
 // The latest published version, or null offline, unpublished or slow: the check must never be in the way.
 export async function latestVersion(): Promise<string | null> {
   try {
-    const res = await fetch(`${REGISTRY}/${pkg.name}/latest`, { signal: AbortSignal.timeout(3000) })
+    const res = await fetch(`${REGISTRY}/${PACKAGE}/latest`, { signal: AbortSignal.timeout(3000) })
     if (!res.ok) return null
     const latest = (await res.json()) as { version?: unknown; repository?: unknown }
     if (repoOf(latest) !== repoOf(pkg)) return null
@@ -52,17 +57,25 @@ export function newer(a: string, b: string): boolean {
   return false
 }
 
-// The command that updates this copy, from where it is installed; null when it runs from a checkout of the repo.
+// The command that updates this copy, from where its binary is installed: by a package manager (inside
+// node_modules) or by the install script. Null when it runs from a checkout of the repo.
 export function updateCommand(): string[] | null {
-  let path = process.argv[1] ?? ""
+  if (!COMPILED) return null
+  let path = process.execPath
   try {
     path = realpathSync(path)
   } catch {}
-  if (!path.includes("node_modules")) return null
-  const spec = `${pkg.name}@latest`
+  const spec = `${PACKAGE}@latest`
+  if (!path.includes("node_modules")) return ["sh", "-c", `curl -fsSL ${INSTALL_SCRIPT} | sh`]
   if (path.includes(".bun")) return ["bun", "add", "-g", spec]
   if (path.includes("pnpm")) return ["pnpm", "add", "-g", spec]
   return ["npm", "install", "-g", spec]
+}
+
+// The same command again, for the restart after an update: a binary is its own runtime, so its first argument is
+// the embedded script and is left out.
+export function sameCommand(): string[] {
+  return [process.execPath, ...process.argv.slice(COMPILED ? 2 : 1)]
 }
 
 // Package managers say what they are doing but not how far along they are, so the bar moves by stage and creeps
