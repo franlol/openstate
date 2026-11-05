@@ -1,0 +1,71 @@
+# Pushing a tag vX.Y.Z (the version in package.json) releases it: the binaries and SHA256SUMS to GitHub Releases, the
+# packages to npm (trusted publishing, so no token), and the formula to openstate-devtools/homebrew-tap.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # the GitHub release
+  id-token: write # npm trusted publishing and provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the notes list the commits since the last tag
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@latest
+
+      - name: The tag is the package version
+        run: test "${GITHUB_REF_NAME#v}" = "$(jq -r .version package.json)"
+
+      # The native OpenTUI packages for every platform, which the cross-compiled binaries embed.
+      - run: bun install --frozen-lockfile --os="*" --cpu="*"
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run release
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          git log --format='- %s' ${prev:+$prev..}"$GITHUB_REF_NAME" | grep -E '^- (feat|fix|perf)' > notes.md || true
+          gh release create "$GITHUB_REF_NAME" release/*.tar.gz release/SHA256SUMS --title "$GITHUB_REF_NAME" --notes-file notes.md
+
+      # The platform packages first: the launcher depends on them. A version already there is left alone, so a failed
+      # run can be run again.
+      - name: npm
+        run: |
+          for d in release/npm/cli-* release/npm/cli release/npm/client; do
+            name=$(jq -r .name "$d/package.json")
+            version=$(jq -r .version "$d/package.json")
+            if npm view "$name@$version" version >/dev/null 2>&1; then echo "$name@$version is already published"; continue; fi
+            npm publish --access public --provenance "$d"
+          done
+
+      - name: Homebrew tap
+        env:
+          TAP_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          eval "$(ssh-agent -s)"
+          ssh-add - <<< "$TAP_KEY"
+          mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git clone git@github.com:openstate-devtools/homebrew-tap.git tap
+          cp release/openstate.rb tap/Formula/openstate.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then echo "the formula did not change"; exit 0; fi
+          git commit -am "openstate ${GITHUB_REF_NAME#v}"
+          git push
