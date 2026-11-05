@@ -1,6 +1,10 @@
-// Messages between an app (through @openstate/client) and openstate, one JSON object per WebSocket frame.
-// Redux stores send Redux DevTools' lifted state and take lifted actions back, so the app keeps the
-// history and recomputes; other stores only report action + state, and openstate keeps their history.
+// Messages between an app (through @openstate/client) and openstate, as JSON: one object per WebSocket frame,
+// or an array of them when the client sends a batch. Redux stores send Redux DevTools' lifted state and take
+// lifted actions back, so the app keeps the history and recomputes; other stores report action + state, and
+// keep a short history of their own so a reconnect loses nothing.
+
+// Bumped only for changes an older peer would misread; both sides ignore fields and messages they do not know.
+export const PROTOCOL = 1
 
 export type LiftedState = {
   actionsById: Record<number, { type: "PERFORM_ACTION"; action: { type: string; [k: string]: unknown }; timestamp: number; stack?: string }>
@@ -16,11 +20,16 @@ export type LiftedState = {
 }
 
 export type AppMessage =
-  | { t: "hello"; app: string; runtime: string }
-  // A store appeared or the socket reconnected. `kind` says who owns the history.
+  // `run` is new on every start of the app, so openstate can tell a reconnect from a reload.
+  | { t: "hello"; v: number; app: string; runtime: string; run: string }
+  // A store appeared, the socket reconnected, or the client fell behind and starts over. `kind` says who
+  // owns the history. Connect stores send their recent actions (`history`, oldest first) and the state
+  // before them, so openstate can fill in what it missed.
   | { t: "init"; id: string; name: string; lib: string; kind: "lifted"; lifted: LiftedState }
-  | { t: "init"; id: string; name: string; lib: string; kind: "connect"; state: unknown }
-  // One new action. `liftedId` is its id in the lifted state, for lifted stores.
+  | { t: "init"; id: string; name: string; lib: string; kind: "connect"; state: unknown; history: Entry[] }
+  // One new action. `liftedId` is its id in the lifted state, for lifted stores; `drop` how many of the
+  // oldest actions (after the first) the app let go to stay within maxAge, folding them into the first.
+  // `n` numbers a connect store's actions, so a reconnect can tell which ones openstate already has.
   | {
       t: "action"
       id: string
@@ -29,13 +38,18 @@ export type AppMessage =
       time: number
       stack?: string
       liftedId?: number
+      drop?: number
+      n?: number
       fromDevtools?: boolean
     }
   // The whole lifted state, after anything other than one appended action.
   | { t: "lifted"; id: string; lifted: LiftedState }
 
+// A connect store's action as kept by the client.
+export type Entry = { n: number; action: { type: string; [k: string]: unknown }; state: unknown; time: number; stack?: string; fromDevtools?: boolean }
+
 export type ServerMessage =
-  | { t: "config"; maxAge: number }
+  | { t: "config"; v?: number; maxAge: number }
   // A lifted action (TOGGLE_ACTION, SWEEP, IMPORT_STATE…) for a lifted store.
   | { t: "lifted"; id: string; action: { type: string; [k: string]: unknown } }
   // An action to run in the app, as typed in openstate's dispatch card.

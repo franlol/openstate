@@ -32,7 +32,8 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
   `connect()` stores (zustand…) keep their history here and throw for what needs a reducer (skip, reorder, lock).
   Pages from another origin are held until allowed (`Access` in `src/model.ts`, saved to the `origins` file)
 - `client/` — `@openstate/client`: installs `__REDUX_DEVTOOLS_EXTENSION__`/`_COMPOSE__`, built on `@redux-devtools/instrument`;
-  `client/protocol.ts` holds the messages both sides speak
+  `client/protocol.ts` holds the messages both sides speak (`PROTOCOL` is their version). The client batches
+  messages every 50 ms, and a client too far behind sends each store's init again instead
 - `src/mock.ts` — fake apps with deterministic reducers implementing `StoreConn`; the real bridge must match it
 - `src/settings.ts` — `:set` options (definitions, vim-style parser, config file at `~/.config/openstate/config`).
   A new option needs its entry in `OPTIONS`, `Settings` and `DEFAULTS`; the card, completion and file follow

@@ -183,7 +183,7 @@ export class AppState {
       this.sources = startMock(...hooks)
       this.access = mockAccess(hooks[0])
     } else {
-      this.bridge = startBridge({ onChange: hooks[0], isPaused: hooks[1], maxAge: hooks[2] })
+      this.bridge = startBridge({ onChange: hooks[0], isPaused: hooks[1], maxAge: hooks[2], warn: (text) => this.notify(text, true) })
       this.sources = this.bridge.sources
       this.access = this.bridge.access
       this.listenError = this.bridge.listen(this.settings.port)

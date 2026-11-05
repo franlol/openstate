@@ -3,7 +3,7 @@
 // Each connection is a source; each store it reports is a Store whose StoreConn talks back over the socket.
 import type { Server, ServerWebSocket } from "bun"
 import jsan from "jsan"
-import type { AppMessage, LiftedState, ServerMessage } from "../client/protocol"
+import { PROTOCOL, type AppMessage, type LiftedState, type ServerMessage } from "../client/protocol"
 import { parseStack, splitAction } from "./history"
 import { isLocal, newActionId, type Access, type Action, type History, type Origin, type Source, type Store, type StoreConn } from "./model"
 import { loadOrigins, saveOrigins } from "./settings"
@@ -19,6 +19,8 @@ type Conn = {
   parked?: boolean
   // Decided by the first frame: @openstate/client says hello, a remote devtools client starts a SocketCluster handshake.
   proto?: "openstate" | "remote"
+  // The app's start, from its hello.
+  run?: string
 }
 type LiftedAction = { type: string; [k: string]: unknown }
 type Socket = ServerWebSocket<Conn>
@@ -43,6 +45,9 @@ type Link = {
   expect: string[]
   // A remote app's maxAge, learnt from its first isExcess: that flag stays on for good, even after a revert.
   cap?: number
+  // Connect stores: the app's start and the number of the last action recorded, to fill in a reconnect.
+  run?: string
+  lastN?: number
 }
 
 export type Bridge = {
@@ -60,7 +65,12 @@ const HELD_MAX = 1000
 // zustand and friends hand over states, not a reducer, so nothing can be replayed differently.
 const unsupported = (st: Store, what: string) => new Error(`${what} needs a Redux store; ${st.name} (${st.lib}) only reports its states`)
 
-export function startBridge(opts: { onChange: () => void; isPaused: () => boolean; maxAge: () => number }): Bridge {
+export function startBridge(opts: {
+  onChange: () => void
+  isPaused: () => boolean
+  maxAge: () => number
+  warn: (text: string) => void
+}): Bridge {
   const sources: Source[] = []
   const links = new WeakMap<Store, Link>()
   const sockets = new Set<Socket>()
@@ -306,9 +316,11 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
     }
   }
 
-  function onHello(ws: Socket, app: string) {
-    ws.data.source = sourceFor(app, ws.data.origin)
-    sendTo(ws, { t: "config", maxAge: opts.maxAge() })
+  function onHello(ws: Socket, m: Extract<AppMessage, { t: "hello" }>) {
+    ws.data.source = sourceFor(m.app, ws.data.origin)
+    ws.data.run = m.run
+    sendTo(ws, { t: "config", v: PROTOCOL, maxAge: opts.maxAge() })
+    if (m.v !== PROTOCOL) opts.warn(`${m.app} speaks protocol ${m.v ?? 0}, openstate ${PROTOCOL} · update the older one`)
   }
 
   function sourceFor(app: string, origin?: string): Source {
@@ -352,18 +364,30 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
       links.set(st, l)
     }
     const l = links.get(st)!
-    if (m.kind === "lifted") fromLifted(st, l, m.lifted)
-    else {
-      l.seq = 0
-      st.commitId = null
-      st.actions = [makeAction(st, { action: { type: "@@INIT" }, time: Date.now() }, l.seq++, m.state, m.state)]
+    if (m.kind === "lifted") return fromLifted(st, l, m.lifted)
+    const history = m.history ?? []
+    const first = history[0]?.n
+    const run = ws.data.run
+    // The same run reconnecting, or catching up after falling behind: add what openstate missed.
+    if (l.run === run && l.lastN !== undefined && (first === undefined || first <= l.lastN + 1)) {
+      for (const e of history) if (e.n > l.lastN) record(st, l, { t: "action", id: m.id, ...e })
+      return
     }
+    // A new start, or a gap longer than the app keeps: what the app has is the history.
+    l.run = run
+    l.lastN = undefined
+    l.seq = 0
+    st.commitId = null
+    st.actions = [makeAction(st, { action: { type: "@@INIT" }, time: Date.now() }, l.seq++, m.state, m.state)]
+    for (const e of history) record(st, l, { t: "action", id: m.id, ...e })
   }
 
   function onAction(src: Source, m: Extract<AppMessage, { t: "action" }>) {
     const st = src.stores.find((s) => s.key === `${src.id}/${m.id}`)
     const l = st && links.get(st)
-    if (st && l) record(st, l, m)
+    if (!st || !l) return
+    record(st, l, m)
+    if (m.drop) dropOldest(st, l, m.drop)
   }
 
   function record(st: Store, l: Link, m: Extract<AppMessage, { t: "action" }>) {
@@ -386,6 +410,7 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
       st.actions.push(a)
       return
     }
+    if (m.n !== undefined) l.lastN = m.n
     // The app keeps running while paused; only openstate stops recording.
     if (opts.isPaused() && !m.fromDevtools) return
     st.actions.push(makeAction(st, m, l.seq++, last?.state, m.state, m.fromDevtools))
@@ -462,37 +487,41 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
     }
   }
 
-  function dropOldest(st: Store, l: Link) {
+  // As the instrument does past maxAge: the n oldest actions after the first fold into it.
+  function dropOldest(st: Store, l: Link, n = 1) {
     const ls = l.lifted
-    if (!ls || ls.stagedActionIds.length < 3) return
-    const [gone] = ls.stagedActionIds.splice(1, 1)
-    delete ls.actionsById[gone!]
-    ls.computedStates.shift()
+    if (!ls || ls.stagedActionIds.length < n + 2) return
+    const gone = new Set(ls.stagedActionIds.splice(1, n))
+    for (const id of gone) delete ls.actionsById[id]
+    ls.skippedActionIds = ls.skippedActionIds.filter((id) => !gone.has(id))
+    ls.computedStates.splice(0, n)
+    ls.committedState = ls.computedStates[0]?.state
     ls.currentStateIndex = ls.stagedActionIds.length - 1
-    const i = st.actions.findIndex((a) => a.seq === gone)
     const first = st.actions[0]
-    if (i > 0 && first) {
-      first.state = first.prev = st.actions[i]!.state
-      st.actions.splice(i, 1)
-    }
+    if (!first) return
+    first.state = first.prev = ls.committedState
+    st.actions = [first, ...st.actions.slice(1).filter((a) => !gone.has(a.seq))]
   }
 
   function handle(ws: Socket, text: string) {
     // SocketCluster pongs ("" or "#2"): nothing to do, we never ping.
     if (text === "" || text === "#2") return
-    let m: AppMessage
+    let parsed: unknown
     try {
-      m = JSON.parse(text)
+      parsed = JSON.parse(text)
     } catch {
       return
     }
-    ws.data.proto ??= "t" in m ? "openstate" : "remote"
-    if (ws.data.proto === "remote") {
-      // A client may batch several frames into one array.
-      for (const p of [m].flat() as object[]) onRemoteFrame(ws, p)
-      return opts.onChange()
-    }
-    if (m.t === "hello") onHello(ws, m.app)
+    // Either protocol may batch several messages into one array.
+    const batch = ([parsed].flat() as unknown[]).filter((x): x is object => typeof x === "object" && x !== null)
+    ws.data.proto ??= batch[0] && "t" in batch[0] ? "openstate" : "remote"
+    if (ws.data.proto === "remote") for (const p of batch) onRemoteFrame(ws, p)
+    else for (const m of batch as AppMessage[]) onMessage(ws, m)
+    opts.onChange()
+  }
+
+  function onMessage(ws: Socket, m: AppMessage) {
+    if (m.t === "hello") onHello(ws, m)
     const src = ws.data.source
     if (!src) return
     if (m.t === "init") onInit(ws, src, m)
@@ -501,7 +530,6 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
       const st = src.stores.find((s) => s.key === `${src.id}/${m.id}`)
       if (st) fromLifted(st, links.get(st)!, m.lifted)
     }
-    opts.onChange()
   }
 
   return {
