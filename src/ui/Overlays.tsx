@@ -1,7 +1,7 @@
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useEffect, useRef, useState } from "react"
 import { homedir } from "node:os"
-import { CONFIG_PATH, DEFAULTS, format, OPTIONS, show } from "../settings"
+import { CONFIG_PATH, DEFAULTS, OPTIONS, parseValue, show, type Option, type Settings } from "../settings"
 import { REPO_URL, SHINE_MS } from "../state"
 import { updateCommand, VERSION } from "../update"
 import { mix, shineGlow, themes, titleShades } from "../theme"
@@ -404,58 +404,82 @@ export function ThemePicker() {
 }
 
 // `:set` with no arguments: every option, its value and what it does; changes save at once.
+// Every value an option can take, so the card shows the choice rather than one value. A typed option shows its own.
+function choices(o: Option, st: Settings): string[] {
+  if (o.typed || o.name === "theme") return [show(o.name, st)]
+  if (o.kind === "bool") return ["on", "off"]
+  if (o.kind === "number") return [...new Set([...(o.steps ?? []), st[o.name] as number])].sort((a, b) => a - b).map(String)
+  return o.values!()
+}
+
 export function SettingsCard({ width }: { width: number }) {
   const s = useApp()
   const t = s.theme
   const card = s.settingsCard
   if (!card) return null
-  const w = Math.min(width - 4, 72)
+  const w = Math.min(width - 4, 66)
   const inner = w - 4
-  const valW = Math.max(...OPTIONS.flatMap((o) => (o.values?.() ?? [show(o.name, s.settings)]).map((v) => v.length))) + 5
   const cur = OPTIONS[card.index]!
-  const nameW = Math.max(...OPTIONS.map((o) => o.name.length)) + 2
+  // What enter does on the highlighted option, when it is more than stepping to the next value.
+  const action = cur.name === "theme" ? "pick" : cur.typed ? "edit" : cur.kind === "number" ? "custom" : null
+  const nameW = Math.max(...OPTIONS.map((o) => o.name.length)) + 3
+  const chip = (v: string) => ` ${v} `
   return (
     <Modal
       title="settings"
       width={w}
-      height={OPTIONS.length + 5}
+      height={OPTIONS.length + 7}
       foot={{
-        note: [[` saved to ${CONFIG_PATH.replace(homedir(), "~")}`, t.dim]],
         hints: [
+          ...(action ? [{ key: "enter", desc: action, run: () => s.enterSetting() }] : []),
           { key: "esc", desc: "close", run: () => (s.settingsCard = null) },
         ],
       }}
     >
       {OPTIONS.map((o, i) => {
         const on = i === card.index
-        const v = show(o.name, s.settings)
+        const value = show(o.name, s.settings)
+        const values = choices(o, s.settings)
         const changed = s.settings[o.name] !== DEFAULTS[o.name]
-        const value = on && !o.typed ? `‹ ${v} ›` : `  ${v}  `
+        const left: Part[] = [
+          [on ? "▌" : " ", t.accent],
+          [o.name, on ? t.fg : t.sources[1]!, BOLD],
+          [changed ? " •" : "  ", t.accent],
+          [" ".repeat(nameW - o.name.length - 2), t.fg],
+          ...(o.name === "theme" ? [[" ", t.fg] as Part, ...t.sources.map((c): Part => ["●", c])] : []),
+          ...values.flatMap((v, j): Part[] => [
+            [!j && o.name === "theme" ? " " : "", t.fg],
+            // The value in use looks the same on every row, so the highlight of the row never hides it.
+            v === value ? [chip(v), t.accent, BOLD] : [chip(v), t.dim],
+          ]),
+        ]
         return (
           <Line
             key={o.name}
             bg={on ? t.selBg : t.panel}
-            parts={fit(
-              [
-                [on ? "▌" : " ", t.accent],
-                [o.name.padEnd(nameW), on ? t.fg : t.sources[1]!, BOLD],
-                [value.padEnd(valW), changed ? t.accent : t.fg, changed ? BOLD : undefined],
-                [o.desc, t.muted],
-              ],
-              inner,
-            )}
-            onMouseDown={() => {
-              if (on) s.stepSetting(1)
-              else card.index = i
+            parts={fit(left, inner)}
+            onMouseDown={(e) => {
+              card.index = i
+              // Which value was clicked: the chips start after the name and, for themes, the swatch.
+              let x = e.x - e.currentTarget!.x - 1 - nameW - (o.name === "theme" ? t.sources.length + 2 : 0)
+              for (const v of values) {
+                if (x >= 0 && x < chip(v).length) {
+                  if (o.name === "theme" || o.typed) s.enterSetting()
+                  else if (v !== value) s.applySettings({ [o.name]: parseValue(o, v) })
+                  break
+                }
+                x -= chip(v).length
+              }
               s.emit()
             }}
           />
         )
       })}
+      <Line parts={[["─".repeat(inner), t.border]]} />
+      <Line parts={fit([[` ${cur.desc}`, t.fg, BOLD]], inner)} />
+      <Line parts={fit([[` ${cur.help}`, t.muted], [cur.kind === "number" ? ` · ${cur.min}–${cur.max}` : "", t.dim]], inner)} />
       <Line parts={[[" ", t.dim]]} />
-      {/* The command-line form of the highlighted option, so the card also teaches :set. */}
-      <Line parts={fit([[" :set ", t.dim], [format(cur.name, s.settings), t.fg], [`  ${cur.help}`, t.muted]], inner)} />
-      <Line parts={[[" ", t.dim]]} />
+      <Line parts={fit([[` saved to ${CONFIG_PATH.replace(homedir(), "~")}`, t.dim]], inner)} />
     </Modal>
   )
 }

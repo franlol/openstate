@@ -318,7 +318,7 @@ export function useGlobalKeys(s: AppState) {
         { key: "right", desc: "next value", group: "settings", run: () => s.stepSetting(1) },
         { key: "left", desc: "prev value", group: "settings", run: () => s.stepSetting(-1) },
         { key: "space", desc: "next value", group: "settings", run: () => s.stepSetting(1) },
-        { key: "return", desc: "next value", group: "settings", run: () => s.stepSetting(1) },
+        { key: "return", desc: "pick or next value", group: "settings", run: () => s.enterSetting() },
         { key: "escape", desc: "close", group: "settings", run: close },
         { key: "q", desc: "close", group: "settings", run: close },
       ]),

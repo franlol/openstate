@@ -54,8 +54,8 @@ export function App() {
       <Suggestions width={width} />
       <WhichKey />
       <DispatchCard width={width} />
-      <ThemePicker />
       <SettingsCard width={width} />
+      <ThemePicker />
       <ConnectCard width={width} />
       <UpdateCard width={width} />
       <Help width={width} height={height} />

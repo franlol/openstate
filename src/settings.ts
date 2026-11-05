@@ -14,7 +14,7 @@ export type Settings = {
 }
 export type OptionName = keyof Settings
 
-type Option = {
+export type Option = {
   name: OptionName
   desc: string
   // What the values mean, shown in the settings card and in `:set name?`.

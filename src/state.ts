@@ -375,15 +375,23 @@ export class AppState {
     const card = this.settingsCard
     const o = card && OPTIONS[card.index]
     if (!o) return
-    if (o.typed) {
-      // Hand over to the command line, ready for the value.
-      this.settingsCard = null
-      this.mode = "command"
-      this.input = `set ${o.name}=`
-      this.cmdIndex = 0
-      return
-    }
+    if (o.typed) return this.typeSetting(o.name)
     this.applySettings({ [o.name]: stepValue(o, this.settings, dir) })
+  }
+  // Hand over to the command line, ready for the value.
+  typeSetting(name: OptionName) {
+    this.settingsCard = null
+    this.mode = "command"
+    this.input = `set ${name}=`
+    this.cmdIndex = 0
+  }
+
+  // enter in the settings card: themes open the picker, numbers the command line for any value, the rest step.
+  enterSetting() {
+    const o = this.settingsCard && OPTIONS[this.settingsCard.index]
+    if (o?.name === "theme") this.openPicker()
+    else if (o?.kind === "number") this.typeSetting(o.name)
+    else this.stepSetting(1)
   }
 
   setTheme(id: string) {
