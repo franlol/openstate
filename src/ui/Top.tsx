@@ -4,7 +4,7 @@ import { changeCount, clock, type Action } from "../model"
 import { SHINE_MS, type AppState } from "../state"
 import { VERSION } from "../update"
 import { mix, shineGlow, titleShades } from "../theme"
-import { BOLD, fit, Line, useApp, type Part } from "./kit"
+import { BOLD, fit, Line, spread, useApp, type Part } from "./kit"
 
 const SEP = " › "
 
@@ -20,7 +20,7 @@ export function Header({ width }: { width: number }) {
   const pinDepth = pinned ? pinned.split(".").length : 0
 
   // Each crumb remembers what clicking it does.
-  const crumbs: { parts: Part[]; click?: () => void }[] = [{ parts: [[" ", t.bg], ...title(s), [` ${VERSION}`, t.dim]] }]
+  const crumbs: { parts: Part[]; click?: () => void }[] = [{ parts: [[" ", t.bg], ...title(s)] }]
   if (s.merge) crumbs.push({ parts: [["all apps", t.fg]] })
   else if (src && store) {
     crumbs.push({ parts: [[src.name, t.sources[src.color % t.sources.length]!]], click: () => (s.focus = "sources") })
@@ -51,7 +51,7 @@ export function Header({ width }: { width: number }) {
       x += w
     }
   }
-  return <Line parts={fit(left, width)} bg={t.bg} onMouseDown={onDown} />
+  return <Line parts={spread(left, [[`${VERSION} `, t.dim]], width)} bg={t.bg} onMouseDown={onDown} />
 }
 
 // "open" in the accent colour and "state" a shade lighter; a shine runs across it once, left to right, when
