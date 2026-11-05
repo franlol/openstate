@@ -2,7 +2,10 @@
 // and Fast Refresh hook into; the client chains onto it, finds the context providers the app renders and reports each
 // one's value like a connect() store: @@INIT when it mounts, "update" when the value changes. Read only: nothing can
 // set a context's value from outside. Only the app's own contexts are watched, not those of Next, react-redux, Radix…
+// Each "update" carries what changed: the top-level keys whose values differ, or the whole value when it is not an object.
 // It relies on React's fiber tree, as the React DevTools do; any surprise there turns it off instead of breaking the app.
+
+import { CONTEXT_LIB } from "./protocol"
 
 // What it reads of a fiber; stable since React 16.
 type Fiber = {
@@ -20,7 +23,7 @@ type Fiber = {
   _debugSource?: { fileName?: string } | null
 }
 
-export type ContextConn = { init(state: unknown): void; send(action: { type: string }, state: unknown): void }
+export type ContextConn = { init(state: unknown): void; send(action: { type: string; payload: unknown }, state: unknown): void }
 export type ConnectContext = (options: { name: string; lib: string; trace: false; readOnly: true }) => ContextConn
 
 const CONTEXT_PROVIDER = 10
@@ -80,13 +83,13 @@ export function watchContexts(connect: ConnectContext, enabled: () => boolean) {
       w = free.get(context)?.pop()
       if (w) {
         w.mounted = true
-        if (!same(w.last, value)) w.conn.send({ type: "mount" }, value)
+        if (!same(w.last, value)) w.conn.send({ type: "mount", payload: changed(w.last, value) }, value)
       } else {
         const name = uniqueName(context.displayName || componentName(owner(f)) || "Context")
-        w = { context, name, conn: connect({ name, lib: "react context", trace: false, readOnly: true }), last: value, mounted: true }
+        w = { context, name, conn: connect({ name, lib: CONTEXT_LIB, trace: false, readOnly: true }), last: value, mounted: true }
         w.conn.init(value)
       }
-    } else if (value !== w.last && !same(w.last, value)) w.conn.send({ type: "update" }, value)
+    } else if (value !== w.last && !same(w.last, value)) w.conn.send({ type: "update", payload: changed(w.last, value) }, value)
     w.last = value
     byFiber.set(f, w)
     if (f.alternate) byFiber.set(f.alternate, w)
@@ -177,6 +180,19 @@ function sourceOf(f: Fiber): string | null {
   const name = componentName(owner(f))
   if (name) return frames.find((l) => l.includes(` ${name} (`) || l.trim().startsWith(`at ${name} `) || l.startsWith(`${name}@`)) ?? null
   return frames.find((l) => !REACT_FRAME.test(l) && /[\\/]/.test(l)) ?? null
+}
+
+// What a new value changed, as a setState call would have said it: the top-level keys whose values differ (functions
+// never do), or the whole value when either is not a plain object.
+function changed(prev: unknown, next: unknown): unknown {
+  if (!plain(prev) || !plain(next)) return next
+  return Object.fromEntries(Object.entries(next).filter(([k, v]) => !Object.prototype.hasOwnProperty.call(prev, k) || !same(prev[k], v)))
+}
+
+function plain(x: unknown): x is Record<string, unknown> {
+  if (!x || typeof x !== "object" || Array.isArray(x)) return false
+  const proto = Object.getPrototypeOf(x)
+  return proto === Object.prototype || proto === null
 }
 
 // Whether two values hold the same: functions count as equal (callbacks are made anew on every render), and React

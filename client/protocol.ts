@@ -6,6 +6,9 @@
 // Bumped only for changes an older peer would misread; both sides ignore fields and messages they do not know.
 export const PROTOCOL = 1
 
+// The lib of the stores the client makes for React contexts (react.ts); openstate shows them with `:set contexts`.
+export const CONTEXT_LIB = "react context"
+
 export type LiftedState = {
   actionsById: Record<number, { type: "PERFORM_ACTION"; action: { type: string; [k: string]: unknown }; timestamp: number; stack?: string }>
   computedStates: { state: unknown; error?: string }[]

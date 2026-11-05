@@ -116,8 +116,11 @@ Next only passes variables named `NEXT_PUBLIC_…` to the browser.
 
 Each context your app provides (`<CartContext value={…}>`) shows up as a store labelled `react context`, named by its
 `displayName` or the component that provides it, several at once numbered (`ThemeContext #2`). Its value comes as
-`@@INIT` when it mounts and `update` when it changes; a render that makes the same value again (a new object with the
-same contents, new callbacks) is not one. Providers that come back after unmounting continue their store.
+`@@INIT` when it mounts and `update` when it changes, with what changed as the payload: the keys whose values differ
+(`{ items: […] }`), or the whole value when it is not an object. A render that makes the same value again (a new
+object with the same contents, new callbacks) is not one. Providers that come back after unmounting continue their store.
+They are hidden until `:set contexts`, as an app can have many: the foot of the sources panel counts them, and they
+record all along, so turning them on shows their history.
 
 The client hooks into the same place as the React DevTools (`__REACT_DEVTOOLS_GLOBAL_HOOK__`), alongside them if they
 are installed, in development builds only. Contexts of libraries (Next, react-redux, component kits) are left out: a
@@ -161,6 +164,7 @@ change is saved at once. From the command line:
 | `maxage` | 10–5000                               | 500         | actions kept per store; older ones drop as new ones arrive. The action list shows how full it is (`120/500`) |
 | `time`   | `clock` \| `delta`                    | `clock`     | time column of the action list: `14:39:15`, or time since the previous action (`+1.20s`) |
 | `flash`  | on / off                              | on          | rows and values light up as actions arrive          |
+| `contexts` | on / off                            | off         | show the apps' React contexts; hidden ones keep recording |
 | `port`   | 1024–65535                            | 8000        | where openstate listens; tell the client with `OPENSTATE_URL` or `install({ url })` |
 | `lan`    | on / off                              | off         | also listen on the network, for phones, VMs and containers; each device is asked about |
 | `theme`  | `openstate` `catppuccin` `tokyonight` `gruvbox` `nord` | `openstate` | colour theme; `:theme` previews them as you move |

@@ -1,4 +1,4 @@
-import { CLIENT_UPDATE, diff, flatten, getPath, hostOf, isLocal, type Access, type Action, type Change, type Origin, type Source, type Store, type TreeRow } from "./model"
+import { CLIENT_UPDATE, diff, isContext, flatten, getPath, hostOf, isLocal, type Access, type Action, type Change, type Origin, type Source, type Store, type TreeRow } from "./model"
 import { homedir } from "node:os"
 import { resolve } from "node:path"
 import { exportHistory, importHistory } from "./history"
@@ -205,8 +205,15 @@ export class AppState {
   }
 
   // --- data ---------------------------------------------------------------
+  // An app's stores as listed: its React contexts only with `:set contexts` (off by default). Hidden ones keep recording.
+  stores(src: Source): Store[] {
+    return this.settings.contexts ? src.stores : src.stores.filter((st) => !isContext(st))
+  }
   allStores(): Store[] {
-    return this.sources.flatMap((s) => s.stores)
+    return this.sources.flatMap((s) => this.stores(s))
+  }
+  hiddenContexts(): number {
+    return this.settings.contexts ? 0 : this.sources.reduce((n, s) => n + s.stores.filter(isContext).length, 0)
   }
   store(key = this.activeKey): Store | undefined {
     return this.allStores().find((s) => s.key === key)
@@ -244,7 +251,7 @@ export class AppState {
   timeline(): Action[] {
     const stores = this.merge ? this.allStores() : [this.store()]
     const v = this.view()
-    const deps = [this.merge, this.filter, [...v.hidden].join("\n"), this.reorders, ...stores.flatMap((s) => [s?.actions, s?.actions.length])]
+    const deps = [this.merge, this.filter, [...v.hidden].join("\n"), this.reorders, this.settings.contexts, ...stores.flatMap((s) => [s?.actions, s?.actions.length])]
     return this.cached("timeline", deps, () => this.computeTimeline())
   }
   private computeTimeline(): Action[] {
@@ -290,7 +297,7 @@ export class AppState {
       if (o) attached.add(o.origin)
       return [
         { kind: "source" as const, source, origin: o },
-        ...source.stores.map((store) => ({ kind: "store" as const, source, store })),
+        ...this.stores(source).map((store) => ({ kind: "store" as const, source, store })),
       ]
     })
     const origins = (access: Origin["access"]) =>
@@ -361,7 +368,8 @@ export class AppState {
       const first = this.allStores()[0]
       if (first) this.activate(first.key)
     }
-    for (const st of this.allStores()) {
+    const shown = new Set(this.allStores())
+    for (const st of this.sources.flatMap((s) => s.stores)) {
       const seen = this.lastSeen.get(st.key) ?? 0
       const last = st.actions[st.actions.length - 1]
       const total = last ? last.seq + 1 : 0
@@ -369,6 +377,8 @@ export class AppState {
       // Revert and sweep leave gaps in seq, so pick new actions by seq rather than by count.
       const fresh = st.actions.filter((a) => a.seq >= seen)
       this.lastSeen.set(st.key, total)
+      // A hidden context records, but neither counts as unseen nor flashes when shown again.
+      if (!shown.has(st)) continue
       const visible = this.merge || st.key === this.activeKey
       if (!visible) this.unseen.set(st.key, (this.unseen.get(st.key) ?? 0) + fresh.length)
       for (const a of fresh) this.flashActions.set(a.id, now)
@@ -453,6 +463,13 @@ export class AppState {
     Object.assign(this.settings, changed)
     if (changed.theme) this.theme = findTheme(changed.theme)
     if (changed.maxage !== undefined) this.bridge?.setMaxAge(changed.maxage)
+    // A context hidden while open gives way to the first store shown; the cursor follows the open store's row.
+    if (changed.contexts !== undefined) {
+      this.activeKey = (this.store() ?? this.allStores()[0])?.key ?? ""
+      const i = this.sourceRows().findIndex((r) => r.kind === "store" && r.store.key === this.activeKey)
+      if (i >= 0) this.srcCursor = i
+      this.clampSrcCursor()
+    }
     if ((changed.port !== undefined || changed.lan !== undefined) && this.bridge) {
       if (this.listen()) return this.notify(`E: ${this.listenError} · :set port=<another>`, true)
     }
@@ -504,9 +521,11 @@ export class AppState {
     if (i >= 0) this.srcCursor = i
   }
   cycleSource(dir: 1 | -1) {
-    const i = this.sources.findIndex((s) => s.stores.some((st) => st.key === this.activeKey))
-    const next = this.sources[(i + dir + this.sources.length) % this.sources.length]!
-    this.activate(next.stores[0]!.key)
+    // Apps with nothing shown (only hidden contexts) are passed over.
+    const apps = this.sources.filter((s) => this.stores(s).length)
+    const i = apps.findIndex((s) => s.stores.some((st) => st.key === this.activeKey))
+    const next = apps[(i + dir + apps.length) % apps.length]
+    if (next) this.activate(this.stores(next)[0]!.key)
   }
 
   toggleMerge() {
@@ -742,6 +761,8 @@ export class AppState {
   openDispatch() {
     const st = this.target()
     if (!st) return
+    // Nothing to write the action for: a React context takes no actions.
+    if (st.readOnly) return this.notify(`E: dispatch needs the app to take a state back; ${st.name} (${st.lib}) can only be watched`, true)
     this.stopPlay()
     const uses = new Map<string, number>()
     for (const a of st.actions) if (a.type !== "@@INIT") uses.set(a.type, (uses.get(a.type) ?? 0) + 1)
@@ -995,7 +1016,7 @@ export class AppState {
     // In place: the bridge keeps adding to this same list.
     this.sources.splice(this.sources.indexOf(src), 1)
     if (src.stores.some((s) => s.key === this.activeKey)) {
-      const next = this.sources[0]?.stores[0]
+      const next = this.allStores()[0]
       if (next) this.activate(next.key)
       else this.activeKey = ""
     }

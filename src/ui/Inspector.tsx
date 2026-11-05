@@ -53,7 +53,7 @@ export function Inspector({ width }: { width: number }) {
       ) : s.tab === "state" ? (
         <StateTree width={width - 3} />
       ) : s.tab === "action" ? (
-        <CodeView content={JSON.stringify({ type: a.type, payload: a.payload ?? null }, null, 2)} />
+        <CodeView content={JSON.stringify(a.payload === undefined ? { type: a.type } : { type: a.type, payload: a.payload }, null, 2)} />
       ) : s.tab === "diff" ? (
         <DiffView />
       ) : s.tab === "raw" ? (

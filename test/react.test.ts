@@ -83,6 +83,8 @@ test("a change is an update; a render with the same values is nothing", async ()
   await sleep(100)
   expect(types(named("CartProvider"))).toEqual(["@@INIT", "update"])
   expect(states(named("CartProvider")).at(-1)).toEqual({ items: 2, add: "[Function add]" })
+  // What changed, as setState would have said it; the new add() is not a change.
+  expect(named("CartProvider")!.actions.at(-1)!.payload).toEqual({ items: 2 })
 })
 
 test("a provider that comes back continues its store", async () => {
@@ -91,6 +93,7 @@ test("a provider that comes back continues its store", async () => {
   await until(() => types(named("CartProvider")).includes("mount"))
   expect(stores().filter((s) => s.name.startsWith("CartProvider"))).toHaveLength(1)
   expect(states(named("CartProvider")).at(-1)).toEqual({ items: 1, add: "[Function add]" })
+  expect(named("CartProvider")!.actions.at(-1)!.payload).toEqual({ items: 1 })
 })
 
 test("several providers of one context are numbered", async () => {

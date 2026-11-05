@@ -1,4 +1,4 @@
-import { PROTOCOL } from "../client/protocol"
+import { CONTEXT_LIB, PROTOCOL } from "../client/protocol"
 import { CLIENT_VERSION } from "../client/version"
 import { newer } from "./update"
 
@@ -85,6 +85,9 @@ export type Source = {
 }
 
 export const CLIENT_UPDATE = "npm i -D @openstate-devtools/client@latest"
+
+// A React context the client reports (client/react.ts), shown only with `:set contexts`.
+export const isContext = (st: Store) => st.lib === CONTEXT_LIB
 
 // Whether a source's client is behind the one openstate was built with, or too old to understand each other.
 export function clientStatus(src: Source): "ok" | "outdated" | "incompatible" {

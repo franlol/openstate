@@ -1,6 +1,6 @@
 // Fake apps that emit actions, standing in for real connections until the bridge exists.
 // Each store has a deterministic reducer, so dispatch, skip and revert behave like a real app.
-import { PROTOCOL } from "../client/protocol"
+import { CONTEXT_LIB, PROTOCOL } from "../client/protocol"
 import { CLIENT_VERSION } from "../client/version"
 import { newActionId, type Access, type Action, type ActionInput, type History, type Lib, type Origin, type Source, type Store } from "./model"
 
@@ -116,7 +116,14 @@ const atomsGen: Gen = (s) => {
   return { type: "selectedUserAtom", payload: pick(["u_81", "u_12", null]), at: "UserTable.tsx:71:13" }
 }
 
-type Spec = { sourceId: string; lib: Lib; name: string; init: unknown; gen: Gen; reduce: Reducer; every: [number, number] }
+// React contexts as the client reports them: each update carries the keys that changed.
+const merge: Reducer = (s, { payload }) => ({ ...s, ...(payload as object) })
+
+const themeGen: Gen = (s) => ({ type: "update", payload: { mode: s.mode === "dark" ? "light" : "dark" }, at: "ThemeProvider.tsx:18:3" })
+const authGen: Gen = (s) =>
+  s.session ? { type: "update", payload: { session: null }, at: "AuthProvider.tsx:40:5" } : { type: "update", payload: { session: { user: "ada", expires: "1h" } }, at: "AuthProvider.tsx:40:5" }
+
+type Spec = { sourceId: string; lib: Lib; name: string; init: unknown; gen: Gen; reduce: Reducer; every: [number, number]; readOnly?: boolean }
 
 const specs: Spec[] = [
   {
@@ -136,6 +143,26 @@ const specs: Spec[] = [
     gen: prefsGen,
     reduce: prefsReduce,
     every: [3000, 9000],
+  },
+  {
+    sourceId: "shop-web",
+    lib: CONTEXT_LIB,
+    name: "ThemeContext",
+    init: { mode: "dark", density: "compact" },
+    gen: themeGen,
+    reduce: merge,
+    every: [8000, 20000],
+    readOnly: true,
+  },
+  {
+    sourceId: "shop-web",
+    lib: CONTEXT_LIB,
+    name: "AuthContext",
+    init: { session: null },
+    gen: authGen,
+    reduce: merge,
+    every: [6000, 15000],
+    readOnly: true,
   },
   {
     sourceId: "api-node",
@@ -246,6 +273,7 @@ function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () =
     actions: [],
     commitId: null,
     locked: false,
+    readOnly: spec.readOnly,
     conn: {
       dispatch: (a) => record(a, "openstate dispatch", true),
       toggle: (id) => {
@@ -306,6 +334,17 @@ function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () =
         } else onChange()
       },
     },
+  }
+
+  // A React context, like the bridge's: only watched.
+  if (spec.readOnly) {
+    const watched = (what: string) => () => {
+      throw new Error(`${what} needs the app to take a state back; ${spec.name} (${spec.lib}) can only be watched`)
+    }
+    const reduxOnly = (what: string) => () => {
+      throw new Error(`${what} needs a Redux store; ${spec.name} (${spec.lib}) only reports its states`)
+    }
+    Object.assign(store.conn, { dispatch: watched("dispatch"), revert: watched("revert"), import: watched("import"), toggle: reduxOnly("skip"), reorder: reduxOnly("reorder"), lock: reduxOnly("lock") })
   }
 
   // Silent: openstate is still being constructed and reads the history when it is done.

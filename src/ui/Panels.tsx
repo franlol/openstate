@@ -83,6 +83,7 @@ export function Sources({ width }: { width: number }) {
   const t = s.theme
   const rows = s.sourceRows()
   const inner = width - 3
+  const hidden = s.hiddenContexts()
   const focused = s.focus === "sources"
   const ref = useScrollTo(`src-${s.srcCursor}`)
   const online = s.sources.filter((x) => x.connected).length
@@ -116,7 +117,7 @@ export function Sources({ width }: { width: number }) {
             // The button under the mouse fills with its colour, so it is clear what a click does.
             const button = (i: number, mark: string, c: string): Part =>
               hover?.origin === o?.origin && hover?.button === i ? [` ${mark} `, t.panel, BOLD, c] : [` ${mark} `, c, BOLD]
-            const unseen = src ? src.stores.reduce((n, st) => n + (s.unseen.get(st.key) ?? 0), 0) : 0
+            const unseen = src ? s.stores(src).reduce((n, st) => n + (s.unseen.get(st.key) ?? 0), 0) : 0
             const right: Part[] = answer
               ? [[answer === "allow" ? "✓ allowed " : answer === "block" ? "✗ blocked " : "forgotten ", answer === "allow" ? t.add : t.remove, BOLD]]
               : act
@@ -171,7 +172,7 @@ export function Sources({ width }: { width: number }) {
                   s.srcCursor = i
                   const b = buttonAt(e)
                   if (o && act && b !== null) s.answerOrigin(o.origin, b === 0 ? "allow" : asking ? "block" : "forget")
-                  else if (src?.stores[0]) s.activate(src.stores[0].key)
+                  else if (src && s.stores(src)[0]) s.activate(s.stores(src)[0]!.key)
                   s.emit()
                 }}
               />
@@ -206,6 +207,8 @@ export function Sources({ width }: { width: number }) {
           )
         })}
       </scrollbox>
+      {/* Not a row: it only says what `:set contexts` hides. */}
+      {hidden ? <Line parts={fit([[` ${hidden} context${hidden === 1 ? "" : "s"} hidden`, t.dim]], inner)} bg={t.panel} /> : null}
     </Panel>
   )
 }

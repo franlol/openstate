@@ -9,6 +9,7 @@ export type Settings = {
   maxage: number
   time: "clock" | "delta"
   flash: boolean
+  contexts: boolean
   theme: string
   port: number
   lan: boolean
@@ -50,6 +51,12 @@ export const OPTIONS: Option[] = [
   },
   { name: "flash", desc: "flash what changes", help: "rows and values light up as actions arrive", kind: "bool" },
   {
+    name: "contexts",
+    desc: "show React contexts",
+    help: "hidden ones keep recording; the sources panel counts them",
+    kind: "bool",
+  },
+  {
     name: "port",
     desc: "port apps connect to",
     help: "apps send to 8000 unless told otherwise",
@@ -73,7 +80,7 @@ export const OPTIONS: Option[] = [
   { name: "theme", desc: "colour theme", help: "also :theme, which previews them", kind: "enum", values: () => themes.map((t) => t.id) },
 ]
 
-export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, theme: themes[0]!.id, port: 8000, lan: false, updatecheck: true }
+export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, contexts: false, theme: themes[0]!.id, port: 8000, lan: false, updatecheck: true }
 
 export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "openstate", "config")
 // The web pages let in or kept out, next to the config: `allow https://shop.dev`, `block https://x.io`.
