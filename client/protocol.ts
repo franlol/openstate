@@ -21,7 +21,8 @@ export type LiftedState = {
 
 export type AppMessage =
   // `run` is new on every start of the app, so openstate can tell a reconnect from a reload.
-  | { t: "hello"; v: number; app: string; runtime: string; run: string }
+  // `client` is the client's version (CLIENT_VERSION), sent since 0.1.4.
+  | { t: "hello"; v: number; app: string; runtime: string; run: string; client?: string }
   // A store appeared, the socket reconnected, or the client fell behind and starts over. `kind` says who
   // owns the history. Connect stores send their recent actions (`history`, oldest first) and the state
   // before them, so openstate can fill in what it missed.

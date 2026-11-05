@@ -163,6 +163,11 @@ On start openstate asks npm for its latest version; a newer one shows as `↑ 0.
 installed it, or the install script again), and `enter` again restarts into it; connected apps reconnect by themselves. `:set noupdatecheck` stops the
 check on start; `:update` still looks when asked. Running from a clone of the repo, update with `git pull`.
 
+The client in your apps has its own version and changes far less often; a release that leaves it alone does not
+publish it again. An app whose client is older than the one this openstate was built with shows `↑` in the sources
+panel (`!` when it is too old to understand openstate), and selecting it puts the command in the statusline:
+`npm i -D @openstate-devtools/client@latest`, which `yc` copies.
+
 ## Develop
 
 ```bash

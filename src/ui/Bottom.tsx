@@ -2,6 +2,8 @@ import type { MouseEvent } from "@opentui/core"
 import { stringifyKeySequence } from "@opentui/keymap"
 import { useActiveKeys, useKeymap, usePendingSequence } from "@opentui/keymap/react"
 import { useState } from "react"
+import { CLIENT_VERSION } from "../../client/version"
+import { CLIENT_UPDATE, clientStatus } from "../model"
 import { format, OPTIONS } from "../settings"
 import type { AppState } from "../state"
 import { mix } from "../theme"
@@ -120,6 +122,8 @@ export function CmdLine({ width }: { width: number }) {
     return <Line parts={fit([[`${s.confirm.text} `, t.warn, BOLD], ["[y/N]", t.fg]], width)} bg={t.bg} />
   const msg = s.message && s.message.until > Date.now() ? s.message : null
   const home = s.selected() && s.home(s.selected()!)
+  const src = s.merge ? undefined : s.sourceOf(s.activeKey)
+  const status = src ? clientStatus(src) : "ok"
   const left: Part[] = msg
     ? [[msg.text, msg.error ? t.remove : t.fg, msg.error ? BOLD : undefined]]
     : home
@@ -129,7 +133,16 @@ export function CmdLine({ width }: { width: number }) {
           ["U", t.fg, BOLD],
           [" restores", t.muted],
         ]
-      : []
+      : status !== "ok"
+        ? [
+            [status === "outdated" ? "↑ " : "! ", status === "outdated" ? t.warn : t.remove, BOLD],
+            [`${src!.name}: client ${src!.client!.version ?? "before 0.1.4"}, ${CLIENT_VERSION} is out · `, t.muted],
+            [CLIENT_UPDATE, t.fg],
+            [" · ", t.muted],
+            ["yc", t.fg, BOLD],
+            [" copies it", t.muted],
+          ]
+        : []
   const showcmd: Part[] = pending.length ? [[`${keyLabel(stringifyKeySequence(pending, { preferDisplay: true }))} `, t.fg, BOLD]] : []
   return <Line parts={spread(left, showcmd, width)} bg={t.bg} />
 }

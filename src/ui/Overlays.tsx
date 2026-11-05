@@ -2,7 +2,8 @@ import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useEffect, useRef, useState } from "react"
 import { homedir } from "node:os"
 import { CONFIG_PATH, DEFAULTS, OPTIONS, parseValue, show, type Option, type Settings } from "../settings"
-import { hostOf } from "../model"
+import { CLIENT_VERSION } from "../../client/version"
+import { CLIENT_UPDATE, clientStatus, hostOf } from "../model"
 import { REPO_URL, SHINE_MS } from "../state"
 import { updateCommand, VERSION } from "../update"
 import { mix, shineGlow, themes, titleShades } from "../theme"
@@ -184,7 +185,16 @@ export function ConnectCard({ width }: { width: number }) {
   const url = `ws://localhost:${port}`
   const head = (text: string): Part[] => [[text, t.fg, BOLD]]
   const code = (text: string, note = ""): Part[] => [[`  ${text}`, t.add], [note ? `   ${note}` : "", t.dim]]
+  // Apps whose client is behind this openstate come first: one command catches them up.
+  const behind = s.sources.filter((src) => clientStatus(src) !== "ok")
   const lines: Part[][] = [
+    ...(behind.length
+      ? ([
+          head(`Older client in ${behind.map((src) => src.name).join(", ")}`),
+          code(CLIENT_UPDATE, `latest ${CLIENT_VERSION}`),
+          [],
+        ] as Part[][])
+      : []),
     head("Redux, zustand or jotai"),
     code("npm i -D @openstate-devtools/client"),
     code('import "@openstate-devtools/client"', "first import of the app"),

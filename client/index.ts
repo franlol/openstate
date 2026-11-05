@@ -8,6 +8,7 @@
 import { instrument } from "@redux-devtools/instrument"
 import type { StoreEnhancer } from "redux"
 import { currentStack, libFromStack } from "./detect"
+import { CLIENT_VERSION } from "./version"
 import { PROTOCOL, toJSON, type AppMessage, type Entry, type LiftedState, type ServerMessage } from "./protocol"
 
 export type ClientOptions = {
@@ -118,7 +119,7 @@ function connect() {
     retry = 0
     queue = []
     behind = false
-    ws.send(toJSON([{ t: "hello", v: PROTOCOL, app: config.name, runtime, run }, ...inits()]))
+    ws.send(toJSON([{ t: "hello", v: PROTOCOL, app: config.name, runtime, run, client: CLIENT_VERSION }, ...inits()]))
   }
   ws.onmessage = (e) => {
     let m: ServerMessage

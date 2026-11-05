@@ -52,6 +52,7 @@ export function globalBinds(s: AppState): Bind[] {
     { key: "ys", desc: "yank state", group: "yank", run: () => s.yank("state") },
     { key: "yp", desc: "yank tree path", group: "yank", run: () => s.yank("path") },
     { key: "yv", desc: "yank tree value", group: "yank", run: () => s.yank("value") },
+    { key: "yc", desc: "yank client update command", group: "yank", run: () => s.yank("client") },
     ...TABS.map((t, i) => ({ key: String(i + 1), desc: t, group: "inspector", run: () => (s.tab = t) })),
     { key: "/", desc: "filter", group: "tools", run: () => ((s.mode = "filter"), (s.input = s.filter)) },
     { key: ":", desc: "command", group: "tools", run: () => ((s.mode = "command"), (s.input = ""), (s.cmdIndex = 0)) },

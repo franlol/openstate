@@ -1,6 +1,6 @@
 import type { BoxRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react"
-import { changeCount, clock, hostOf, isLocal, since, type Action } from "../model"
+import { changeCount, clientStatus, clock, hostOf, isLocal, since, type Action } from "../model"
 import type { AppState, Focus } from "../state"
 import { mix } from "../theme"
 import { BOLD, DIM, fit, Line, scrollbar, spread, STRIKE, useApp, type Part } from "./kit"
@@ -131,14 +131,18 @@ export function Sources({ width }: { width: number }) {
                     : unseen
                       ? [[` +${unseen} `, t.warn]]
                       : []
+            // Its client is behind openstate's (↑), or too old to understand it (!): the statusline says what to run.
+            const status = src ? clientStatus(src) : "ok"
+            const mark: Part = status === "ok" ? ["", t.dim] : [status === "outdated" ? " ↑" : " !", status === "outdated" ? t.warn : t.remove, BOLD]
             // What does not fit is left out rather than cut, the name after the host first.
-            const rw = right.reduce((n, [x]) => n + x.length, 0)
+            const rw = right.reduce((n, [x]) => n + x.length, 0) + mark[0].length
             if (3 + main.length + 1 + extra.length + rw > inner) extra = ""
             parts = spread(
               [
                 o ? [asking ? " ? " : " ✗ ", asking ? t.warn : t.remove, BOLD] : [off ? " ○ " : " ● ", off ? t.dim : color],
                 [main, o && !asking ? t.muted : off ? t.muted : t.fg, o && !asking ? STRIKE : BOLD],
                 [extra ? ` ${extra}` : "", t.dim],
+                mark,
               ],
               right,
               inner,

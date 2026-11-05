@@ -1,9 +1,9 @@
-import { diff, flatten, getPath, hostOf, isLocal, type Access, type Action, type Change, type Origin, type Source, type Store, type TreeRow } from "./model"
+import { CLIENT_UPDATE, diff, flatten, getPath, hostOf, isLocal, type Access, type Action, type Change, type Origin, type Source, type Store, type TreeRow } from "./model"
 import { homedir } from "node:os"
 import { resolve } from "node:path"
 import { exportHistory, importHistory } from "./history"
 import { startBridge, type Bridge } from "./bridge"
-import { latestVersion, newer, releaseNotes, runUpdate, updateCommand, VERSION, type Progress } from "./update"
+import { installedVersion, latestVersion, newer, releaseNotes, runUpdate, updateCommand, VERSION, type Progress } from "./update"
 import { mockAccess, startMock } from "./mock"
 import { DEFAULTS, format, OPTIONS, parseSet, saveSettings, stepValue, type OptionName, type Settings } from "./settings"
 import { findTheme, themes, type Theme } from "./theme"
@@ -184,7 +184,7 @@ export class AppState {
       this.sources = startMock(...hooks)
       this.access = mockAccess(hooks[0])
     } else {
-      this.bridge = startBridge({ onChange: hooks[0], isPaused: hooks[1], maxAge: hooks[2], warn: (text) => this.notify(text, true) })
+      this.bridge = startBridge({ onChange: hooks[0], isPaused: hooks[1], maxAge: hooks[2], warn: (text, error = true) => this.notify(text, error) })
       this.sources = this.bridge.sources
       this.access = this.bridge.access
       this.listen()
@@ -837,7 +837,8 @@ export class AppState {
   }
 
   // --- yank -------------------------------------------------------------------
-  yank(what: "action" | "state" | "path" | "value") {
+  yank(what: "action" | "state" | "path" | "value" | "client") {
+    if (what === "client") return this.put(CLIENT_UPDATE, "the client update command")
     const a = this.selected()
     if (!a) return
     const row = this.tab === "state" ? this.treeRows()[this.view().treeCursor] : undefined
@@ -1036,8 +1037,11 @@ export class AppState {
     if (!cmd) return
     u.phase = "running"
     void runUpdate(cmd, (p) => ((u.progress = { ...p }), this.emit())).then(({ ok, output }) => {
-      u.phase = ok ? "done" : "failed"
-      u.output = output.split("\n").filter(Boolean).at(-1)
+      const installed = ok ? installedVersion() : null
+      // Restarting into the same version would offer the update again, round and round.
+      const stale = installed !== null && installed !== u.latest
+      u.phase = ok && !stale ? "done" : "failed"
+      u.output = stale ? `the install finished, but ${installed} is still the one installed, not ${u.latest}` : output.split("\n").filter(Boolean).at(-1)
       this.emit()
     })
   }

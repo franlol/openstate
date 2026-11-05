@@ -66,11 +66,24 @@ export function updateCommand(): string[] | null {
     path = realpathSync(path)
   } catch {}
   const spec = `${PACKAGE}@latest`
-  if (path.includes("/Cellar/")) return ["brew", "upgrade", "openstate"]
+  // Homebrew reads taps only once a day by itself, so it would not see the new version yet.
+  if (path.includes("/Cellar/")) return ["sh", "-c", "brew update --quiet && brew upgrade openstate"]
   if (!path.includes("node_modules")) return ["sh", "-c", `curl -fsSL ${INSTALL_SCRIPT} | sh`]
   if (path.includes(".bun")) return ["bun", "add", "-g", spec]
   if (path.includes("pnpm")) return ["pnpm", "add", "-g", spec]
   return ["npm", "install", "-g", spec]
+}
+
+// The version the installed binary reports, which a restart would run; null from source or when it cannot say.
+// A package manager may finish without error and without installing anything.
+export function installedVersion(): string | null {
+  if (!COMPILED) return null
+  try {
+    const out = Bun.spawnSync([binaryPath(), "--version"], { timeout: 5000 }).stdout.toString()
+    return out.match(/\d+\.\d+\.\d+/)?.[0] ?? null
+  } catch {
+    return null
+  }
 }
 
 // The same command again, for the restart after an update: a binary is its own runtime, so its first argument is

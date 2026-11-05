@@ -4,8 +4,9 @@
 import type { Server, ServerWebSocket } from "bun"
 import jsan from "jsan"
 import { PROTOCOL, type AppMessage, type LiftedState, type ServerMessage } from "../client/protocol"
+import { CLIENT_VERSION } from "../client/version"
 import { parseStack, splitAction } from "./history"
-import { isLocal, newActionId, type Access, type Action, type History, type Origin, type Source, type Store, type StoreConn } from "./model"
+import { clientStatus, isLocal, newActionId, type Access, type Action, type History, type Origin, type Source, type Store, type StoreConn } from "./model"
 import { loadOrigins, saveOrigins } from "./settings"
 
 type Conn = {
@@ -76,7 +77,8 @@ export function startBridge(opts: {
   onChange: () => void
   isPaused: () => boolean
   maxAge: () => number
-  warn: (text: string) => void
+  // A message for the user; an error unless said otherwise.
+  warn: (text: string, error?: boolean) => void
 }): Bridge {
   const sources: Source[] = []
   const links = new WeakMap<Store, Link>()
@@ -328,8 +330,17 @@ export function startBridge(opts: {
     ws.data.source = sourceFor(m.app, ws.data.origin)
     ws.data.run = m.run
     sendTo(ws, { t: "config", v: PROTOCOL, maxAge: opts.maxAge() })
-    if (m.v !== PROTOCOL) opts.warn(`${m.app} speaks protocol ${m.v ?? 0}, openstate ${PROTOCOL} · update the older one`)
+    const src = ws.data.source
+    src.client = { version: m.client ?? null, protocol: m.v ?? 0 }
+    const status = clientStatus(src)
+    if (status === "incompatible") opts.warn(`${src.name} speaks protocol ${m.v ?? 0}, openstate ${PROTOCOL} · update the older one`)
+    // Once per app and run of openstate: the mark in the sources panel says it from then on.
+    else if (status === "outdated" && !toldOutdated.has(src.name)) {
+      toldOutdated.add(src.name)
+      opts.warn(`${src.name}: its client ${m.client ?? "(before 0.1.4)"} is behind ${CLIENT_VERSION} · select it for the command`, false)
+    }
   }
+  const toldOutdated = new Set<string>()
 
   function sourceFor(app: string, origin?: string): Source {
     // The same app coming back (reload, restart) takes its old place in the list.

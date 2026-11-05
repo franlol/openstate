@@ -1,5 +1,7 @@
 // Fake apps that emit actions, standing in for real connections until the bridge exists.
 // Each store has a deterministic reducer, so dispatch, skip and revert behave like a real app.
+import { PROTOCOL } from "../client/protocol"
+import { CLIENT_VERSION } from "../client/version"
 import { newActionId, type Access, type Action, type ActionInput, type History, type Lib, type Origin, type Source, type Store } from "./model"
 
 type Step = ActionInput & { at: string }
@@ -170,6 +172,8 @@ export function startMock(onChange: () => void, isPaused: () => boolean, maxAge:
     origin: origins[id],
     links: [{ time: Date.now(), connected: true }],
     stores: [],
+    // api-node runs an older client, to show how openstate flags it.
+    client: { version: id === "api-node" ? "0.1.2" : CLIENT_VERSION, protocol: PROTOCOL },
   }))
   for (const spec of specs) {
     const src = sources.find((s) => s.id === spec.sourceId)!

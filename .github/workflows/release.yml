@@ -29,6 +29,15 @@ jobs:
       - name: The tag is the package version
         run: test "${GITHUB_REF_NAME#v}" = "$(jq -r .version package.json)"
 
+      # The client is published only when CLIENT_VERSION moves; a change without it would never reach apps.
+      - name: A changed client has a new version
+        run: |
+          prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null) || exit 0
+          if ! git diff --quiet "$prev" "$GITHUB_REF_NAME" -- client && git diff --quiet "$prev" "$GITHUB_REF_NAME" -- client/version.ts; then
+            echo "client/ changed since $prev but CLIENT_VERSION in client/version.ts did not"
+            exit 1
+          fi
+
       # The native OpenTUI packages for every platform, which the cross-compiled binaries embed.
       - run: bun install --frozen-lockfile --os="*" --cpu="*"
       - run: bun run typecheck

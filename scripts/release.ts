@@ -1,7 +1,7 @@
 // Builds everything a release publishes into release/:
 //   npm/cli-<os>-<cpu>/      one package per platform, holding the compiled binary
 //   npm/cli/                 @openstate-devtools/cli, the launcher that picks the binary for the machine
-//   npm/client/              @openstate-devtools/client, compiled for bundlers and Node
+//   npm/client/              @openstate-devtools/client at CLIENT_VERSION, compiled for bundlers and Node
 //   openstate-<os>-<cpu>.tar.gz   the same binaries for GitHub Releases and install.sh
 //   SHA256SUMS               their checksums, which install.sh checks
 //   openstate.rb             the Homebrew formula for those archives, for Formula/ in openstate-devtools/homebrew-tap
@@ -12,6 +12,7 @@ import { createHash } from "node:crypto"
 import { chmodSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import root from "../package.json" with { type: "json" }
+import { CLIENT_VERSION } from "../client/version"
 
 const OUT = "release"
 const version = root.version
@@ -137,6 +138,8 @@ cpSync("LICENSE", join(client, "LICENSE"))
 json(join(client, "package.json"), {
   name: "@openstate-devtools/client",
   ...common,
+  // Its own version: a release that leaves the client alone finds it already published and skips it.
+  version: CLIENT_VERSION,
   description: "Connects an app's Redux, zustand or jotai stores to openstate",
   type: "module",
   exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },

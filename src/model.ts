@@ -1,3 +1,7 @@
+import { PROTOCOL } from "../client/protocol"
+import { CLIENT_VERSION } from "../client/version"
+import { newer } from "./update"
+
 // Shown next to the store name: "redux" for stores instrumented like the extension does, otherwise what the app reported.
 export type Lib = string
 
@@ -73,6 +77,19 @@ export type Source = {
   // Connection history, oldest first; drawn as offline spans on the track.
   links: { time: number; connected: boolean }[]
   stores: Store[]
+  // What @openstate-devtools/client said in its hello: its version (null before 0.1.4, which did not say) and
+  // protocol. None for Redux DevTools remote apps.
+  client?: { version: string | null; protocol: number }
+}
+
+export const CLIENT_UPDATE = "npm i -D @openstate-devtools/client@latest"
+
+// Whether a source's client is behind the one openstate was built with, or too old to understand each other.
+export function clientStatus(src: Source): "ok" | "outdated" | "incompatible" {
+  const c = src.client
+  if (!c) return "ok"
+  if (c.protocol !== PROTOCOL) return "incompatible"
+  return c.version === null || newer(CLIENT_VERSION, c.version) ? "outdated" : "ok"
 }
 
 // Any page open in the browser can reach localhost, so a page from elsewhere waits for a yes before it gets in.

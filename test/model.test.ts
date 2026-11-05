@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { exportHistory, importHistory, splitAction } from "../src/history"
-import { changeCount, diff, getPath, hostOf, isLocal, jsonLines, since, type Action, type Store } from "../src/model"
+import { PROTOCOL } from "../client/protocol"
+import { CLIENT_VERSION } from "../client/version"
+import { changeCount, clientStatus, diff, getPath, hostOf, isLocal, jsonLines, since, type Action, type Source, type Store } from "../src/model"
 
 const action = (prev: unknown, state: unknown) => ({ id: 1, prev, state }) as Action
 
@@ -92,5 +94,17 @@ describe("history files", () => {
     expect(() => importHistory("{")).toThrow(/not JSON/)
     expect(() => importHistory("{}")).toThrow(/no actionsById/)
     expect(() => importHistory(JSON.stringify({ actionsById: { 0: { action: {} } } }))).toThrow(/has no type/)
+  })
+})
+
+describe("client versions", () => {
+  const src = (client?: Source["client"]) => ({ client }) as Source
+  test("older clients and those that do not say are outdated; another protocol is incompatible", () => {
+    expect(clientStatus(src({ version: CLIENT_VERSION, protocol: PROTOCOL }))).toBe("ok")
+    expect(clientStatus(src({ version: "0.0.1", protocol: PROTOCOL }))).toBe("outdated")
+    expect(clientStatus(src({ version: null, protocol: PROTOCOL }))).toBe("outdated")
+    expect(clientStatus(src({ version: CLIENT_VERSION, protocol: PROTOCOL + 1 }))).toBe("incompatible")
+    // Redux DevTools remote apps have no client of ours.
+    expect(clientStatus(src())).toBe("ok")
   })
 })

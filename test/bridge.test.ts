@@ -5,7 +5,7 @@ import { networkInterfaces } from "node:os"
 import jsan from "jsan"
 import { createStore } from "redux"
 import { startBridge, type Bridge } from "../src/bridge"
-import type { Store } from "../src/model"
+import { clientStatus, type Store } from "../src/model"
 
 const PORT = 18_130
 const URL = `ws://localhost:${PORT}`
@@ -215,6 +215,18 @@ describe("who gets in", () => {
     await sleep(200)
     bridge.access.allow("https://shop.example")
     await until(() => closed === 1012)
+  })
+
+  test("an app's client version is kept, and an older one is flagged", async () => {
+    expect(clientStatus(bridge.sources.find((s) => s.name === "test-app")!)).toBe("ok")
+    const ws = new WebSocket(URL)
+    await new Promise((r) => (ws.onopen = r))
+    ws.send(JSON.stringify({ t: "hello", v: 1, app: "old-app", runtime: "node", run: "r", client: "0.1.2" }))
+    await until(() => bridge.sources.some((s) => s.name === "old-app"))
+    const old = bridge.sources.find((s) => s.name === "old-app")!
+    expect(old.client).toEqual({ version: "0.1.2", protocol: 1 })
+    expect(clientStatus(old)).toBe("outdated")
+    ws.close()
   })
 
   test("a sandboxed page is let in for this run only", async () => {
