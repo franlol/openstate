@@ -2,10 +2,11 @@ import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useEffect, useRef, useState } from "react"
 import { homedir } from "node:os"
 import { CONFIG_PATH, DEFAULTS, OPTIONS, parseValue, show, type Option, type Settings } from "../settings"
+import { hostOf } from "../model"
 import { REPO_URL, SHINE_MS } from "../state"
 import { updateCommand, VERSION } from "../update"
 import { mix, shineGlow, themes, titleShades } from "../theme"
-import { BOLD, fit, Footer, Hints, Line, scrollbar, spread, useApp, type Hint, type Part } from "./kit"
+import { BOLD, fit, Footer, Hints, Line, scrollbar, spread, STRIKE, useApp, type Hint, type Part } from "./kit"
 import { globalBinds, keyLabel, panelBinds, type Bind } from "./keys"
 import { WORDMARK, type Wordmark } from "./wordmark"
 
@@ -134,6 +135,7 @@ export function Waiting() {
     ? [["✗ ", t.remove, BOLD], [`not listening: ${s.listenError}`, t.remove], [" · :set port=<another>", t.muted]]
     : [...radar, ["   listening on ", t.muted], [`:${s.settings.port}`, t.fg, BOLD]]
   const sep = "  ·  "
+  const asking = s.waitingOrigin()
   const keys: Hint[] = [
     { key: "c", desc: "connect an app", run: () => (s.connectCard = true) },
     { key: "d", desc: "demo", run: () => s.startDemo() },
@@ -147,6 +149,22 @@ export function Waiting() {
       {/* Apps send to 8000 by default, so another port is the first thing to suspect when nothing shows up. */}
       {s.settings.port !== 8000 && (
         <Line parts={[["⚠ ", t.warn, BOLD], [`apps send to :8000 by default · :set port& goes back · c says how to point them here`, t.warn]]} bg={t.bg} />
+      )}
+      {asking && (
+        <box flexDirection="row" height={1} marginTop={1}>
+          {asking.access === "pending" ? (
+            <Line parts={[["? ", t.warn, BOLD], [hostOf(asking.origin), t.fg, BOLD], [" wants to connect   ", t.muted]]} bg={t.bg} />
+          ) : (
+            <Line parts={[["✗ ", t.remove, BOLD], [hostOf(asking.origin), t.muted, STRIKE], [" is blocked, still trying   ", t.muted]]} bg={t.bg} />
+          )}
+          <Hints
+            hints={[
+              { key: "✓", desc: "allow", run: () => s.allowOrigin(asking.origin), fg: t.add },
+              ...(asking.access === "pending" ? [{ key: "✗", desc: "block", run: () => s.blockOrigin(asking.origin), fg: t.remove }] : []),
+            ]}
+            bg={t.bg}
+          />
+        </box>
       )}
       <box height={2} />
       <box flexDirection="row" height={1}>

@@ -1,7 +1,8 @@
 // Vim-style options: `:set` opens the settings card, `:set name=value` changes one from the command line.
 // They are saved to a config file that uses the same syntax, one option per line.
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { themes } from "./theme"
 
 export type Settings = {
@@ -68,6 +69,29 @@ export const OPTIONS: Option[] = [
 export const DEFAULTS: Settings = { maxage: 500, time: "clock", flash: true, theme: themes[0]!.id, port: 8000, updatecheck: true }
 
 export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "openstate", "config")
+// The web pages let in or kept out, next to the config: `allow https://shop.dev`, `block https://x.io`.
+export const ORIGINS_PATH = join(dirname(CONFIG_PATH), "origins")
+
+// Read once at start, before the server takes its first connection.
+export function loadOrigins(): { allowed: Set<string>; blocked: Set<string> } {
+  const allowed = new Set<string>()
+  const blocked = new Set<string>()
+  try {
+    for (const line of readFileSync(ORIGINS_PATH, "utf8").split("\n")) {
+      const [verb, origin] = line.replace(/#.*/, "").trim().split(/\s+/)
+      if (origin && verb === "allow") allowed.add(origin)
+      if (origin && verb === "block") blocked.add(origin)
+    }
+  } catch {}
+  return { allowed, blocked }
+}
+
+export async function saveOrigins(allowed: Set<string>, blocked: Set<string>): Promise<void> {
+  const out = ["# web pages openstate lets in (allow) or keeps out (block); ✓ and ✗ in the sources list", ""]
+  for (const o of allowed) out.push(`allow ${o}`)
+  for (const o of blocked) out.push(`block ${o}`)
+  await Bun.write(ORIGINS_PATH, out.join("\n") + "\n")
+}
 
 export const optionOf = (name: string) => OPTIONS.find((o) => o.name === name)
 

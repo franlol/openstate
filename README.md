@@ -17,6 +17,14 @@ Press `?` for keybindings and `:` for commands (the list shows what each one doe
 
 ## Connect an app
 
+### Pages from elsewhere
+
+Any page open in the browser can reach `ws://localhost:8000`, so openstate checks where each connection comes from.
+Apps outside a browser and pages on this machine (`localhost`, `127.0.0.1`) come straight in. A page from anywhere
+else waits as `? host` in the sources list until you answer with the ✓ or ✗ on its row (shown under the mouse
+or the cursor; `enter` and `dd` from the keyboard). Blocked pages stay listed as `✗ host  blocked`: ✓ lets them in after all, ↺ forgets them so they are asked about again. `dd` on a connected app cuts it off; a
+page from elsewhere is asked about again if it comes back. The answers are kept in `~/.config/openstate/origins`.
+
 ### Apps already set up for Redux DevTools remote
 
 openstate speaks the Redux DevTools remote protocol (SocketCluster, the one `remotedev-server` and

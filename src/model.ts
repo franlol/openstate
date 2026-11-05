@@ -68,10 +68,36 @@ export type Source = {
   name: string
   color: number
   connected: boolean
+  // The web page it runs in (https://shop.dev), from the browser's Origin header; none outside a browser.
+  origin?: string
   // Connection history, oldest first; drawn as offline spans on the track.
   links: { time: number; connected: boolean }[]
   stores: Store[]
 }
+
+// Any page open in the browser can reach localhost, so a page from elsewhere waits for a yes before it gets in.
+// Pages on this machine and apps outside a browser come straight in; a "no" is kept, so it can be undone later.
+export type Origin = {
+  origin: string
+  access: "pending" | "blocked"
+  tries: number
+  time: number
+  // Sockets from it open right now: a yes lets them in at once.
+  live: number
+}
+export type Access = {
+  origins: Origin[]
+  allow(origin: string): void
+  block(origin: string): void
+  // Back to unknown: its next try asks again.
+  forget(origin: string): void
+  // Cuts a connected app off; a page from elsewhere is asked about again if it comes back.
+  disconnect(src: Source): void
+}
+
+// What the list shows for an origin: the host, as the scheme says little.
+export const hostOf = (origin: string) => origin.replace(/^[a-z]+:\/\//, "")
+export const isLocal = (origin: string) => /^[a-z]+:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin)
 
 export type Change = { path: string; before: unknown; after: unknown }
 

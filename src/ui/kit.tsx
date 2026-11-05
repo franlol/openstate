@@ -113,7 +113,7 @@ export function useSyntax(theme: Theme): SyntaxStyle {
 
 // A key on screen that a click runs too, as pressing it would: `enter update · esc later`. Without `run` it is only
 // a reminder, as for keys that make no sense as a click.
-export type Hint = { key: string; desc: string; run?: () => void }
+export type Hint = { key: string; desc: string; run?: () => void; fg?: string }
 const HINT_SEP = " · "
 export const hintsWidth = (hs: Hint[], sep = HINT_SEP) =>
   hs.reduce((n, h, i) => n + (i ? sep.length : 0) + h.key.length + 1 + h.desc.length, 0)
@@ -134,7 +134,7 @@ export function Hints({ hints, bg, sep = HINT_SEP }: { hints: Hint[]; bg?: strin
   }
   const parts = hints.flatMap((h, i): Part[] => [
     ...(i ? [[sep, t.dim] as Part] : []),
-    [h.key, hover === i ? t.accent : t.fg, BOLD],
+    [h.key, hover === i ? t.accent : (h.fg ?? t.fg), BOLD],
     [` ${h.desc}`, hover === i ? t.fg : t.muted],
   ])
   return (

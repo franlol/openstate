@@ -26,7 +26,8 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
 - `src/history.ts` — `:export` / `:import` in Redux DevTools' file format (lifted state inside `payload`)
 - `src/bridge.ts` — WebSocket server (`:set port`). Speaks openstate/client's protocol and Redux DevTools remote
   (SocketCluster frames, jsan payloads), told apart by the first frame. Redux stores mirror the app's lifted state and send lifted actions back;
-  `connect()` stores (zustand…) keep their history here and throw for what needs a reducer (skip, reorder, lock)
+  `connect()` stores (zustand…) keep their history here and throw for what needs a reducer (skip, reorder, lock).
+  Pages from another origin are held until allowed (`Access` in `src/model.ts`, saved to the `origins` file)
 - `client/` — `openstate/client`: installs `__REDUX_DEVTOOLS_EXTENSION__`/`_COMPOSE__`, built on `@redux-devtools/instrument`;
   `client/protocol.ts` holds the messages both sides speak
 - `src/mock.ts` — fake apps with deterministic reducers implementing `StoreConn`; the real bridge must match it

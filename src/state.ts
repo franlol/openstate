@@ -1,10 +1,10 @@
-import { diff, flatten, getPath, type Action, type Change, type Source, type Store, type TreeRow } from "./model"
+import { diff, flatten, getPath, hostOf, isLocal, type Access, type Action, type Change, type Origin, type Source, type Store, type TreeRow } from "./model"
 import { homedir } from "node:os"
 import { resolve } from "node:path"
 import { exportHistory, importHistory } from "./history"
 import { startBridge, type Bridge } from "./bridge"
 import { latestVersion, newer, releaseNotes, runUpdate, updateCommand, VERSION, type Progress } from "./update"
-import { startMock } from "./mock"
+import { mockAccess, startMock } from "./mock"
 import { DEFAULTS, format, OPTIONS, parseSet, saveSettings, stepValue, type OptionName, type Settings } from "./settings"
 import { findTheme, themes, type Theme } from "./theme"
 
@@ -14,6 +14,8 @@ export type Mode = "normal" | "filter" | "command" | "insert" | "visual"
 export const TABS: Tab[] = ["state", "action", "diff", "trace", "raw"]
 export const FOCI: Focus[] = ["sources", "actions", "inspector"]
 export const MERGED = "*"
+// How long a page's row shows the answer given to it.
+const ANSWER_MS = 450
 
 type View = {
   // Selected action id; null follows the newest action (live).
@@ -29,7 +31,12 @@ type View = {
   hidden: Set<string>
 }
 
-export type SourceRow = { kind: "source"; source: Source } | { kind: "store"; source: Source; store: Store }
+export type SourceRow =
+  // `origin`: the app is offline and its page is waiting for an answer or blocked, asked about on its own row.
+  | { kind: "source"; source: Source; origin?: Origin }
+  | { kind: "store"; source: Source; store: Store }
+  // A page from elsewhere, waiting for a yes or said no to.
+  | { kind: "origin"; origin: Origin }
 
 export type Command = { name: string; desc: string; run: (s: AppState, arg: string) => void }
 
@@ -105,6 +112,10 @@ export class AppState {
     output?: string
   } | null = null
   bridge: Bridge | null = null
+  // Who may connect: the bridge's, or the demo's stand-in.
+  access!: Access
+  // Pending pages already announced.
+  private asked = new Set<string>()
   // Why the bridge is not listening, e.g. the port is taken.
   listenError: string | null = null
   // Problems reading the config file, shown instead of the greeting.
@@ -168,10 +179,13 @@ export class AppState {
     // The splash lists the demo apps as they start; with the bridge the waiting screen says it all.
     if (!demo) this.splashUntil = 0
     const hooks = [() => this.onData(), () => this.paused, () => this.settings.maxage] as const
-    if (demo) this.sources = startMock(...hooks)
-    else {
+    if (demo) {
+      this.sources = startMock(...hooks)
+      this.access = mockAccess(hooks[0])
+    } else {
       this.bridge = startBridge({ onChange: hooks[0], isPaused: hooks[1], maxAge: hooks[2] })
       this.sources = this.bridge.sources
+      this.access = this.bridge.access
       this.listenError = this.bridge.listen(this.settings.port)
     }
     this.activeKey = this.sources[0]?.stores[0]?.key ?? ""
@@ -266,16 +280,73 @@ export class AppState {
     return this.changesOf.out
   }
 
+  // A page that comes back to an app already listed (offline) is asked about on that app's row. Other pages go
+  // last, those waiting before those said no to, so the apps above never move.
   sourceRows(): SourceRow[] {
-    return this.sources.flatMap((source) => [
-      { kind: "source" as const, source },
-      ...source.stores.map((store) => ({ kind: "store" as const, source, store })),
-    ])
+    const attached = new Set<string>()
+    const apps = this.sources.flatMap((source) => {
+      const o = source.connected ? undefined : this.access.origins.find((x) => x.origin === source.origin && !attached.has(x.origin))
+      if (o) attached.add(o.origin)
+      return [
+        { kind: "source" as const, source, origin: o },
+        ...source.stores.map((store) => ({ kind: "store" as const, source, store })),
+      ]
+    })
+    const origins = (access: Origin["access"]) =>
+      this.access.origins
+        .filter((o) => o.access === access && !attached.has(o.origin))
+        .map((origin) => ({ kind: "origin" as const, origin }))
+    return [...apps, ...origins("pending"), ...origins("blocked")]
+  }
+  // The rows ahead of the cursor can only go, never come, so the cursor stays put unless it is past the end.
+  private clampSrcCursor() {
+    this.srcCursor = Math.max(0, Math.min(this.srcCursor, this.sourceRows().length - 1))
+  }
+
+  // --- pages from elsewhere ------------------------------------------------------------------
+  // A page answered from the list: its row shows the answer for a moment, then moves or goes.
+  answered: { origin: string; verdict: "allow" | "block" | "forget" } | null = null
+  answerOrigin(origin: string, verdict: "allow" | "block" | "forget") {
+    if (this.answered) return
+    this.answered = { origin, verdict }
+    setTimeout(() => {
+      this.answered = null
+      if (verdict === "allow") this.allowOrigin(origin)
+      else if (verdict === "block") this.blockOrigin(origin)
+      else this.forgetOrigin(origin)
+      this.emit()
+    }, ANSWER_MS)
+  }
+  // The page the waiting screen asks about: one waiting for an answer, else a blocked one trying right now.
+  waitingOrigin(): Origin | undefined {
+    const os = this.access.origins
+    return os.find((o) => o.access === "pending") ?? os.find((o) => o.access === "blocked" && o.live > 0)
+  }
+  allowOrigin(origin: string) {
+    this.access.allow(origin)
+    this.notify(`${hostOf(origin)} allowed · its apps show up as they connect`)
+    this.clampSrcCursor()
+  }
+  blockOrigin(origin: string) {
+    this.access.block(origin)
+    this.notify(`${hostOf(origin)} blocked · ✓ in sources lets it in later`)
+  }
+  forgetOrigin(origin: string) {
+    this.access.forget(origin)
+    this.notify(`${hostOf(origin)} forgotten · it is asked about again next time`)
+    this.clampSrcCursor()
   }
 
   private onData() {
     this.dataRev++
     const now = Date.now()
+    // A page asking to come in is said once, as it arrives; the list keeps it until it is answered.
+    for (const o of this.access.origins) {
+      if (o.access !== "pending" || this.asked.has(o.origin)) continue
+      this.asked.add(o.origin)
+      this.notify(`${hostOf(o.origin)} wants to connect · ✓ or ✗ in sources`)
+    }
+    for (const o of this.asked) if (!this.access.origins.some((x) => x.origin === o && x.access === "pending")) this.asked.delete(o)
     // The first store to connect (or the next one, once the active app is removed) opens by itself.
     if (!this.store()) {
       const first = this.allStores()[0]
@@ -895,9 +966,16 @@ export class AppState {
     this.stopPlay()
     this.view().cursor = null
   }
+  // dd: a connected app is cut off (it stays listed, offline), one that is gone leaves the list.
   removeSource(id: string) {
     const src = this.sources.find((s) => s.id === id)
-    if (!src || src.connected) return this.notify("E: only disconnected apps can be removed", true)
+    if (!src) return
+    if (src.connected) {
+      this.access.disconnect(src)
+      // Apps outside a browser and pages on this machine are let in again as soon as they reconnect.
+      const asks = src.origin && !isLocal(src.origin)
+      return this.notify(`${src.name} disconnected${asks ? " · it is asked about if it comes back" : " · it is back if it reconnects"} · dd again removes it`)
+    }
     // In place: the bridge keeps adding to this same list.
     this.sources.splice(this.sources.indexOf(src), 1)
     if (src.stores.some((s) => s.key === this.activeKey)) {
@@ -905,7 +983,7 @@ export class AppState {
       if (next) this.activate(next.key)
       else this.activeKey = ""
     }
-    this.srcCursor = Math.min(this.srcCursor, this.sourceRows().length - 1)
+    this.clampSrcCursor()
   }
   quit() {
     this.onQuit()

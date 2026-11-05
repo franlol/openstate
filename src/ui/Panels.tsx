@@ -1,6 +1,6 @@
-import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
-import { Fragment, useEffect, useRef, type ReactNode } from "react"
-import { changeCount, clock, since, type Action } from "../model"
+import type { BoxRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react"
+import { changeCount, clock, hostOf, isLocal, since, type Action } from "../model"
 import type { AppState, Focus } from "../state"
 import { mix } from "../theme"
 import { BOLD, DIM, fit, Line, scrollbar, spread, STRIKE, useApp, type Part } from "./kit"
@@ -86,50 +86,116 @@ export function Sources({ width }: { width: number }) {
   const focused = s.focus === "sources"
   const ref = useScrollTo(`src-${s.srcCursor}`)
   const online = s.sources.filter((x) => x.connected).length
+  // The page row under the mouse, which shows its ✓ ✗ as the cursor's row does.
+  const [hover, setHover] = useState<{ origin: string; button: 0 | 1 | null } | null>(null)
   return (
     <Panel id="sources" title="sources" bottomTitle={` ${online}/${s.sources.length} online `} width={width}>
       <scrollbox ref={ref} flexGrow={1} scrollbarOptions={scrollbar(t)}>
         {rows.map((r, i) => {
-          const color = t.sources[r.source.color % t.sources.length]!
           const cursor = focused && i === s.srcCursor
-          const off = !r.source.connected
           let parts: Part[]
           let bg = t.panel
-          if (r.kind === "source") {
-            const unseen = r.source.stores.reduce((n, st) => n + (s.unseen.get(st.key) ?? 0), 0)
+          // The app or page heading the row, and what is asked about it: rows of pages waiting or blocked, and of apps
+          // whose page came back to be asked about, look and answer alike.
+          const src = r.kind === "origin" ? null : r.source
+          const o = r.kind === "store" ? undefined : r.origin
+          if (r.kind !== "store") {
+            const asking = o?.access === "pending"
+            const answer = o && s.answered?.origin === o.origin ? s.answered.verdict : null
+            const act = !!o && (cursor || hover?.origin === o.origin)
+            const off = !!src && !src.connected
+            const color = src ? t.sources[src.color % t.sources.length]! : t.fg
+            // A page from elsewhere goes by its host, the app name after it when it has one of its own; an app on this
+            // machine or outside a browser by its name, the port of its page after it.
+            const origin = o?.origin ?? src?.origin
+            const remote = !!origin && !isLocal(origin)
+            // A second copy of an app (`shop #2`, two tabs of one page) keeps its number after the host.
+            const copy = src?.name.match(/ #\d+$/)?.[0] ?? ""
+            const main = remote ? hostOf(origin) + copy : src!.name
+            let extra = remote ? (src && src.name.replace(/ #\d+$/, "") !== hostOf(origin) ? src.name.replace(/ #\d+$/, "") : "") : origin ? hostOf(origin).replace(/^[^:]*(?=:)/, "") : ""
+            // The button under the mouse fills with its colour, so it is clear what a click does.
+            const button = (i: number, mark: string, c: string): Part =>
+              hover?.origin === o?.origin && hover?.button === i ? [` ${mark} `, t.panel, BOLD, c] : [` ${mark} `, c, BOLD]
+            const unseen = src ? src.stores.reduce((n, st) => n + (s.unseen.get(st.key) ?? 0), 0) : 0
+            const right: Part[] = answer
+              ? [[answer === "allow" ? "✓ allowed " : answer === "block" ? "✗ blocked " : "forgotten ", answer === "allow" ? t.add : t.remove, BOLD]]
+              : act
+                ? [button(0, "✓", t.add), asking ? button(1, "✗", t.remove) : button(1, "↺", t.warn)]
+                : o
+                  ? // The ✗ and the strike already say it; the word only when the host fits beside it.
+                    asking || 3 + main.length + 9 > inner
+                    ? []
+                    : [[" blocked ", mix(t.remove, t.panel, 0.35)]]
+                  : off
+                    ? [[" offline ", t.dim]]
+                    : unseen
+                      ? [[` +${unseen} `, t.warn]]
+                      : []
+            // What does not fit is left out rather than cut, the name after the host first.
+            const rw = right.reduce((n, [x]) => n + x.length, 0)
+            if (3 + main.length + 1 + extra.length + rw > inner) extra = ""
             parts = spread(
               [
-                [off ? " ○ " : " ● ", off ? t.dim : color],
-                [r.source.name, off ? t.muted : t.fg, BOLD],
+                o ? [asking ? " ? " : " ✗ ", asking ? t.warn : t.remove, BOLD] : [off ? " ○ " : " ● ", off ? t.dim : color],
+                [main, o && !asking ? t.muted : off ? t.muted : t.fg, o && !asking ? STRIKE : BOLD],
+                [extra ? ` ${extra}` : "", t.dim],
               ],
-              off ? [[" offline ", t.dim]] : unseen ? [[`+${unseen} `, t.warn]] : [],
+              right,
               inner,
             )
-          } else {
-            const active = !s.merge && r.store.key === s.activeKey
-            const unseen = s.unseen.get(r.store.key)
-            if (active) bg = t.selBg
-            parts = spread(
-              [
-                [active ? "▌" : " ", t.accent],
-                ["  ", t.dim],
-                [r.store.name, active ? t.fg : t.muted, active ? BOLD : undefined],
-                [r.store.lib === r.store.name ? "" : ` ${r.store.lib}`, t.dim],
-              ],
-              [[unseen ? `+${unseen} ` : `${r.store.actions.length} `, unseen ? t.warn : t.dim]],
-              inner,
+            if (cursor) bg = mix(t.selBg, t.accent, 0.18)
+            // The answer tints the whole row for a moment before it moves or goes.
+            if (answer) bg = mix(t.panel, answer === "allow" ? t.add : t.remove, 0.22)
+            // Which button is at the mouse: the last six columns, three each.
+            const buttonAt = (e: MouseEvent) => {
+              const x = e.x - e.currentTarget!.x - (inner - 6)
+              return !o || x < 0 ? null : x < 3 ? 0 : 1
+            }
+            return (
+              <Line
+                key={src ? `${src.id}/` : `origin/${o!.origin}`}
+                id={`src-${i}`}
+                parts={parts}
+                bg={bg}
+                onMouseMove={(e) => {
+                  if (!o) return
+                  const b = buttonAt(e)
+                  if (hover?.origin !== o.origin || hover.button !== b) setHover({ origin: o.origin, button: b })
+                }}
+                onMouseOut={() => o && setHover(null)}
+                onMouseDown={(e) => {
+                  s.srcCursor = i
+                  const b = buttonAt(e)
+                  if (o && act && b !== null) s.answerOrigin(o.origin, b === 0 ? "allow" : asking ? "block" : "forget")
+                  else if (src?.stores[0]) s.activate(src.stores[0].key)
+                  s.emit()
+                }}
+              />
             )
           }
+          const active = !s.merge && r.store.key === s.activeKey
+          const unseen = s.unseen.get(r.store.key)
+          if (active) bg = t.selBg
+          parts = spread(
+            [
+              [active ? "▌" : " ", t.accent],
+              ["  ", t.dim],
+              [r.store.name, active ? t.fg : t.muted, active ? BOLD : undefined],
+              [r.store.lib === r.store.name ? "" : ` ${r.store.lib}`, t.dim],
+            ],
+            [[unseen ? `+${unseen} ` : `${r.store.actions.length} `, unseen ? t.warn : t.dim]],
+            inner,
+          )
           if (cursor) bg = mix(t.selBg, t.accent, 0.18)
           return (
             <Line
-              key={`${r.source.id}/${r.kind === "store" ? r.store.name : ""}`}
+              key={`${r.source.id}/${r.store.name}`}
               id={`src-${i}`}
               parts={parts}
               bg={bg}
               onMouseDown={() => {
                 s.srcCursor = i
-                s.activate(r.kind === "store" ? r.store.key : r.source.stores[0]!.key)
+                s.activate(r.store.key)
                 s.emit()
               }}
             />

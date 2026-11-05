@@ -74,9 +74,27 @@ export function panelBinds(s: AppState, panel: Focus): Bind[] {
   ]
   if (panel === "sources") {
     const rows = () => s.sourceRows()
+    // The page asked about on the cursor's row: on its own, or on the row of the app it comes back to (from that
+    // app's stores too, where a click on the app puts the cursor).
+    const asked = () => {
+      const r = rows()[s.srcCursor]
+      if (r?.kind !== "store") return r?.origin
+      const head = rows().find((x) => x.kind === "source" && x.source === r.source)
+      return head?.kind === "source" ? head.origin : undefined
+    }
+    // enter: lets a page in, opens an app.
     const open = () => {
       const r = rows()[s.srcCursor]
-      if (r) s.activate(r.kind === "store" ? r.store.key : r.source.stores[0]!.key)
+      const o = asked()
+      if (o) s.answerOrigin(o.origin, "allow")
+      else if (r && r.kind !== "origin") s.activate(r.kind === "store" ? r.store.key : r.source.stores[0]!.key)
+    }
+    // dd: blocks a waiting page, forgets a blocked one, cuts off a connected app, removes one that is gone.
+    const remove = () => {
+      const r = rows()[s.srcCursor]
+      const o = asked()
+      if (o) s.answerOrigin(o.origin, o.access === "pending" ? "block" : "forget")
+      else if (r && r.kind !== "origin") s.removeSource(r.source.id)
     }
     return [
       ...list(
@@ -85,7 +103,7 @@ export function panelBinds(s: AppState, panel: Focus): Bind[] {
       ),
       { key: "return", desc: "open", group: panel, run: open },
       { key: "l", desc: "open", group: panel, run: open },
-      { key: "dd", desc: "remove offline app", group: panel, run: () => s.removeSource(rows()[s.srcCursor]!.source.id) },
+      { key: "dd", desc: "disconnect / remove", group: panel, run: remove },
     ]
   }
   if (panel === "actions") {
@@ -182,6 +200,9 @@ export function useGlobalKeys(s: AppState) {
       ...layer(s, [
         { key: "c", desc: "connect an app", group: "waiting", run: () => (s.connectCard = true) },
         { key: "d", desc: "demo apps", group: "waiting", run: () => s.startDemo() },
+        // The first page waiting for an answer, as shown under the logo.
+        { key: "return", desc: "allow page", group: "waiting", run: () => s.waitingOrigin() && s.allowOrigin(s.waitingOrigin()!.origin) },
+        { key: "x", desc: "block page", group: "waiting", run: () => s.waitingOrigin()?.access === "pending" && s.blockOrigin(s.waitingOrigin()!.origin) },
       ]),
     }),
     [waiting],

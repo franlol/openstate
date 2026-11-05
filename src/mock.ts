@@ -1,6 +1,6 @@
 // Fake apps that emit actions, standing in for real connections until the bridge exists.
 // Each store has a deterministic reducer, so dispatch, skip and revert behave like a real app.
-import { newActionId, type Action, type ActionInput, type History, type Lib, type Source, type Store } from "./model"
+import { newActionId, type Access, type Action, type ActionInput, type History, type Lib, type Origin, type Source, type Store } from "./model"
 
 type Step = ActionInput & { at: string }
 type Gen = (s: any) => Step | null
@@ -159,11 +159,15 @@ const specs: Spec[] = [
 const TRACE = ["at dispatch (redux/src/createStore.ts:271:7)", "at HTMLUnknownElement.callCallback (react-dom.js:3945)"]
 
 export function startMock(onChange: () => void, isPaused: () => boolean, maxAge: () => number): Source[] {
+  // shop-web runs in the browser on this machine, admin-panel on a page from elsewhere let in before, api-node
+  // outside a browser.
+  const origins: Record<string, string | undefined> = { "shop-web": "http://localhost:3000", "admin-panel": "https://admin.miapp.com" }
   const sources: Source[] = ["shop-web", "api-node", "admin-panel"].map((id, i) => ({
     id,
     name: id,
     color: i,
     connected: true,
+    origin: origins[id],
     links: [{ time: Date.now(), connected: true }],
     stores: [],
   }))
@@ -314,4 +318,42 @@ function mockStore(spec: Spec, src: Source, onChange: () => void, isPaused: () =
   }
   setTimeout(tick, 300 + Math.random() * 1000)
   return store
+}
+
+// Pages from elsewhere, to show what asking looks like: a staging site that keeps trying until it is answered,
+// and a tracker said no to before. Nothing real connects, so a yes only takes the page off the list.
+export function mockAccess(onChange: () => void): Access {
+  const origins: Origin[] = [{ origin: "https://ads.tracker.io", access: "blocked", tries: 3, time: Date.now() - 60000, live: 1 }]
+  const allowed = new Set<string>()
+  const retry = (origin: string, every: number) => {
+    const tick = () => {
+      if (allowed.has(origin)) return
+      const o = origins.find((x) => x.origin === origin)
+      if (!o) origins.unshift({ origin, access: "pending", tries: 1, time: Date.now(), live: 1 })
+      else (o.tries++, (o.time = Date.now()))
+      onChange()
+      setTimeout(tick, every)
+    }
+    return tick
+  }
+  setTimeout(retry("https://staging.miapp.com", 9000), 5000)
+  setTimeout(retry("https://ads.tracker.io", 20000), 20000)
+  const drop = (origin: string) => origins.splice(0, origins.length, ...origins.filter((o) => o.origin !== origin))
+  return {
+    origins,
+    allow: (origin) => (allowed.add(origin), drop(origin), onChange()),
+    block(origin) {
+      allowed.delete(origin)
+      const o = origins.find((x) => x.origin === origin)
+      if (o) o.access = "blocked"
+      else origins.push({ origin, access: "blocked", tries: 0, time: Date.now(), live: 0 })
+      onChange()
+    },
+    forget: (origin) => (drop(origin), onChange()),
+    disconnect(src) {
+      src.connected = false
+      src.links.push({ time: Date.now(), connected: false })
+      onChange()
+    },
+  }
 }

@@ -5,10 +5,18 @@ import type { Server, ServerWebSocket } from "bun"
 import jsan from "jsan"
 import type { AppMessage, LiftedState, ServerMessage } from "../client/protocol"
 import { parseStack, splitAction } from "./history"
-import { newActionId, type Action, type History, type Source, type Store, type StoreConn } from "./model"
+import { isLocal, newActionId, type Access, type Action, type History, type Origin, type Source, type Store, type StoreConn } from "./model"
+import { loadOrigins, saveOrigins } from "./settings"
 
 type Conn = {
   source: Source | null
+  // The page it comes from, as the browser says; none outside a browser.
+  origin?: string
+  // Frames from a page still waiting for a yes, handled once it gets one.
+  held?: string[]
+  // A blocked page: kept connected, so its client does not keep retrying, and its frames kept like a waiting
+  // page's (up to HELD_MAX) in case it is let in after all.
+  parked?: boolean
   // Decided by the first frame: openstate/client says hello, a remote devtools client starts a SocketCluster handshake.
   proto?: "openstate" | "remote"
 }
@@ -39,11 +47,15 @@ type Link = {
 
 export type Bridge = {
   sources: Source[]
+  access: Access
   listen(port: number): string | null
   // Frees the port, e.g. for the new openstate after an update.
   close(): void
   setMaxAge(n: number): void
 }
+
+// Frames kept from one blocked page in case it is let in later; a busy one goes past this and reconnects instead.
+const HELD_MAX = 1000
 
 // zustand and friends hand over states, not a reducer, so nothing can be replayed differently.
 const unsupported = (st: Store, what: string) => new Error(`${what} needs a Redux store; ${st.name} (${st.lib}) only reports its states`)
@@ -54,6 +66,86 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
   const sockets = new Set<Socket>()
   let server: Server<Conn> | null = null
   let colors = 0
+  const { allowed, blocked } = loadOrigins()
+  const origins: Origin[] = [...blocked].map((origin) => ({ origin, access: "blocked", tries: 0, time: 0, live: 0 }))
+  // How many of an origin's sockets are waiting or parked, for the list.
+  const recount = () => {
+    for (const o of origins) o.live = socketsOf(o.origin).filter((ws) => ws.data.held || ws.data.parked).length
+  }
+  const save = () => void saveOrigins(allowed, blocked).catch(() => {})
+  const socketsOf = (origin: string) => [...sockets].filter((ws) => ws.data.origin === origin)
+
+  const access: Access = {
+    origins,
+    allow(origin) {
+      blocked.delete(origin)
+      allowed.add(origin)
+      origins.splice(0, origins.length, ...origins.filter((o) => o.origin !== origin))
+      save()
+      for (const ws of socketsOf(origin)) {
+        const blocked = ws.data.parked
+        ws.data.parked = undefined
+        // Those waiting or blocked get in with what they have sent so far. One that sent more than was kept is
+        // asked to reconnect and start over instead; openstate/client does so at once.
+        const held = ws.data.held
+        ws.data.held = undefined
+        if (held) for (const text of held) handle(ws, text)
+        else if (blocked) ws.close(1012, "allowed in openstate, reconnect")
+      }
+      opts.onChange()
+    },
+    block(origin) {
+      allowed.delete(origin)
+      blocked.add(origin)
+      const o = origins.find((x) => x.origin === origin)
+      if (o) o.access = "blocked"
+      else origins.push({ origin, access: "blocked", tries: 0, time: Date.now(), live: 0 })
+      save()
+      for (const ws of socketsOf(origin)) park(ws)
+      recount()
+      opts.onChange()
+    },
+    disconnect(src) {
+      if (src.origin && !isLocal(src.origin) && allowed.delete(src.origin)) save()
+      for (const ws of sockets) if (ws.data.source === src) ws.close(1000, "disconnected in openstate")
+    },
+    forget(origin) {
+      allowed.delete(origin)
+      blocked.delete(origin)
+      // Its blocked sockets go too: kept, they would get in along with the next one on a yes, as a second app.
+      for (const ws of socketsOf(origin)) if (ws.data.parked) ws.close(1000, "forgotten in openstate")
+      origins.splice(0, origins.length, ...origins.filter((o) => o.origin !== origin))
+      save()
+      opts.onChange()
+    },
+  }
+
+  // Not listened to from now on. A page that was already in is cut off instead: it comes back and is parked then.
+  function park(ws: Socket) {
+    if (ws.data.source) return ws.close(1008, "blocked in openstate")
+    ws.data.held ??= []
+    ws.data.parked = true
+  }
+
+  // A new socket: in, held until the user says, or parked.
+  function admit(ws: Socket) {
+    const origin = ws.data.origin
+    if (!origin) return
+    if (blocked.has(origin)) {
+      const o = origins.find((x) => x.origin === origin)
+      if (o) (o.tries++, (o.time = Date.now()))
+      park(ws)
+      recount()
+      return opts.onChange()
+    }
+    if (isLocal(origin) || allowed.has(origin)) return
+    ws.data.held = []
+    const o = origins.find((x) => x.origin === origin)
+    if (o) (o.tries++, (o.time = Date.now()))
+    else origins.push({ origin, access: "pending", tries: 1, time: Date.now(), live: 0 })
+    recount()
+    opts.onChange()
+  }
 
   const sendTo = (ws: Socket, m: ServerMessage) => ws.send(JSON.stringify(m))
   const lifted = (st: Store, action: LiftedAction) => links.get(st)!.out.lifted(action)
@@ -215,15 +307,16 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
   }
 
   function onHello(ws: Socket, app: string) {
-    ws.data.source = sourceFor(app)
+    ws.data.source = sourceFor(app, ws.data.origin)
     sendTo(ws, { t: "config", maxAge: opts.maxAge() })
   }
 
-  function sourceFor(app: string): Source {
+  function sourceFor(app: string, origin?: string): Source {
     // The same app coming back (reload, restart) takes its old place in the list.
     let src = sources.find((s) => s.name === app && !s.connected)
     if (src) {
       src.connected = true
+      src.origin = origin
       src.links.push({ time: Date.now(), connected: true })
     } else {
       const taken = sources.filter((s) => s.name === app || s.name.startsWith(app + " #")).length
@@ -232,6 +325,7 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
         name: taken ? `${app} #${taken + 1}` : app,
         color: colors++,
         connected: true,
+        origin,
         links: [{ time: Date.now(), connected: true }],
         stores: [],
       }
@@ -323,7 +417,7 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
 
   function onRemoteLog(ws: Socket, m: { type: string; name?: string; payload?: string; action?: string; nextActionId?: number; isExcess?: boolean }) {
     if (m.type === "START") {
-      const src = sourceFor(m.name || "remote app")
+      const src = sourceFor(m.name || "remote app", ws.data.origin)
       ws.data.source = src
       const key = `${src.id}/redux`
       let st = src.stores.find((s) => s.key === key)
@@ -383,49 +477,63 @@ export function startBridge(opts: { onChange: () => void; isPaused: () => boolea
     }
   }
 
+  function handle(ws: Socket, text: string) {
+    // SocketCluster pongs ("" or "#2"): nothing to do, we never ping.
+    if (text === "" || text === "#2") return
+    let m: AppMessage
+    try {
+      m = JSON.parse(text)
+    } catch {
+      return
+    }
+    ws.data.proto ??= "t" in m ? "openstate" : "remote"
+    if (ws.data.proto === "remote") {
+      // A client may batch several frames into one array.
+      for (const p of [m].flat() as object[]) onRemoteFrame(ws, p)
+      return opts.onChange()
+    }
+    if (m.t === "hello") onHello(ws, m.app)
+    const src = ws.data.source
+    if (!src) return
+    if (m.t === "init") onInit(ws, src, m)
+    else if (m.t === "action") onAction(src, m)
+    else if (m.t === "lifted") {
+      const st = src.stores.find((s) => s.key === `${src.id}/${m.id}`)
+      if (st) fromLifted(st, links.get(st)!, m.lifted)
+    }
+    opts.onChange()
+  }
+
   return {
     sources,
+    access,
     listen(port) {
       try {
         const next = Bun.serve<Conn>({
           port,
           fetch(req, srv) {
-            if (srv.upgrade(req, { data: { source: null } })) return
+            if (srv.upgrade(req, { data: { source: null, origin: req.headers.get("origin") ?? undefined } })) return
             return new Response("openstate: connect with openstate/client over WebSocket\n", { status: 426 })
           },
           websocket: {
             open(ws) {
               sockets.add(ws)
+              admit(ws)
             },
             message(ws, raw) {
-              const text = String(raw)
-              // SocketCluster pongs ("" or "#2"): nothing to do, we never ping.
-              if (text === "" || text === "#2") return
-              let m: AppMessage
-              try {
-                m = JSON.parse(text)
-              } catch {
-                return
-              }
-              ws.data.proto ??= "t" in m ? "openstate" : "remote"
-              if (ws.data.proto === "remote") {
-                // A client may batch several frames into one array.
-                for (const p of [m].flat() as object[]) onRemoteFrame(ws, p)
-                return opts.onChange()
-              }
-              if (m.t === "hello") onHello(ws, m.app)
-              const src = ws.data.source
-              if (!src) return
-              if (m.t === "init") onInit(ws, src, m)
-              else if (m.t === "action") onAction(src, m)
-              else if (m.t === "lifted") {
-                const st = src.stores.find((s) => s.key === `${src.id}/${m.id}`)
-                if (st) fromLifted(st, links.get(st)!, m.lifted)
-              }
-              opts.onChange()
+              // Past the limit a blocked page's frames are dropped; a yes then has it reconnect.
+              if (ws.data.parked && ws.data.held && ws.data.held.length >= HELD_MAX) ws.data.held = undefined
+              if (ws.data.parked && !ws.data.held) return
+              if (ws.data.held) ws.data.held.push(String(raw))
+              else handle(ws, String(raw))
             },
             close(ws) {
               sockets.delete(ws)
+              // A page that gave up waiting: still listed, as it will try again.
+              ws.data.held = undefined
+              ws.data.parked = undefined
+              recount()
+              opts.onChange()
               const src = ws.data.source
               if (!src) return
               src.connected = false
