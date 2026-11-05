@@ -2,6 +2,7 @@ import type { MouseEvent } from "@opentui/core"
 import { useEffect } from "react"
 import { changeCount, clock, type Action } from "../model"
 import { SHINE_MS, type AppState } from "../state"
+import { VERSION } from "../update"
 import { mix, shineGlow, titleShades } from "../theme"
 import { BOLD, fit, Line, useApp, type Part } from "./kit"
 
@@ -19,7 +20,7 @@ export function Header({ width }: { width: number }) {
   const pinDepth = pinned ? pinned.split(".").length : 0
 
   // Each crumb remembers what clicking it does.
-  const crumbs: { parts: Part[]; click?: () => void }[] = [{ parts: [[" ", t.bg], ...title(s)] }]
+  const crumbs: { parts: Part[]; click?: () => void }[] = [{ parts: [[" ", t.bg], ...title(s), [` ${VERSION}`, t.dim]] }]
   if (s.merge) crumbs.push({ parts: [["all apps", t.fg]] })
   else if (src && store) {
     crumbs.push({ parts: [[src.name, t.sources[src.color % t.sources.length]!]], click: () => (s.focus = "sources") })
