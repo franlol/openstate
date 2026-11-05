@@ -78,6 +78,7 @@ openstate without other changes:
 - Redux Toolkit's `configureStore` (`devTools: { name: "cart" }` names the store)
 - redux with `window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__` or `window.__REDUX_DEVTOOLS_EXTENSION__()`
 - zustand's `devtools` middleware, jotai-devtools, and anything else using the extension's `connect()`
+- the app's React contexts (see below)
 
 It must come first because Redux Toolkit looks for the extension when it loads. Outside a browser (Bun, Node) the client
 defines `window` as `globalThis` so the libraries find it. The app shows up in the sources panel under its host (browser)
@@ -111,19 +112,33 @@ While Next renders on the server the import does nothing; the page reports from 
 host (`localhost:3000`). If openstate listens on another port, set `NEXT_PUBLIC_OPENSTATE_URL=ws://localhost:8123`:
 Next only passes variables named `NEXT_PUBLIC_…` to the browser.
 
+### React contexts
+
+Each context your app provides (`<CartContext value={…}>`) shows up as a store labelled `react context`, named by its
+`displayName` or the component that provides it, several at once numbered (`ThemeContext #2`). Its value comes as
+`@@INIT` when it mounts and `update` when it changes; a render that makes the same value again (a new object with the
+same contents, new callbacks) is not one. Providers that come back after unmounting continue their store.
+
+The client hooks into the same place as the React DevTools (`__REACT_DEVTOOLS_GLOBAL_HOOK__`), alongside them if they
+are installed, in development builds only. Contexts of libraries (Next, react-redux, component kits) are left out: a
+context counts as the app's when the component providing it is not in `node_modules`. In Safari a provider component
+that ends in `return <Context value={…}>` cannot be told apart, so it is left out too. A context can only be watched:
+nothing can set its value from outside, so dispatch, revert and import say so. `install({ react: false })` turns it off;
+should it slow a large app down, it turns itself off and says so in the console.
+
 ### What works with each kind of store
 
 Redux stores keep their own history, like with the extension, so openstate can ask the app to replay it differently.
 zustand and other `connect()` stores only report each new state, so openstate keeps their history and can only send a
 state back.
 
-| | Redux | zustand, jotai, `connect()` |
-|---|---|---|
-| inspect, diff, trace, time-travel the list | ✓ | ✓ |
-| dispatch (`D`) | ✓ | ✓ if the store handles devtools actions (zustand: `dispatchFromDevtools`) |
-| commit (`c`), revert (`R`), reset, sweep | ✓ | ✓ (revert sends the committed state to the app) |
-| import (`:import`) | ✓ | ✓ when the file has states |
-| skip (`s`), reorder (`J`/`K`), lock (`!`) | ✓ | — the reducer is not available; openstate says so |
+| | Redux | zustand, jotai, `connect()` | React context |
+|---|---|---|---|
+| inspect, diff, trace, time-travel the list | ✓ | ✓ | ✓ (no trace) |
+| dispatch (`D`) | ✓ | ✓ if the store handles devtools actions (zustand: `dispatchFromDevtools`) | — |
+| commit (`c`), revert (`R`), reset, sweep | ✓ | ✓ (revert sends the committed state to the app) | commit and sweep only |
+| import (`:import`) | ✓ | ✓ when the file has states | — |
+| skip (`s`), reorder (`J`/`K`), lock (`!`) | ✓ | — the reducer is not available; openstate says so | — |
 
 Pausing (`p`) stops openstate recording; the app keeps running, and nothing it already recorded is lost.
 

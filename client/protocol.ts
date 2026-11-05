@@ -27,7 +27,8 @@ export type AppMessage =
   // owns the history. Connect stores send their recent actions (`history`, oldest first) and the state
   // before them, so openstate can fill in what it missed.
   | { t: "init"; id: string; name: string; lib: string; kind: "lifted"; lifted: LiftedState }
-  | { t: "init"; id: string; name: string; lib: string; kind: "connect"; state: unknown; history: Entry[] }
+  // readOnly: the app cannot take a state back (a React context), so openstate only shows it.
+  | { t: "init"; id: string; name: string; lib: string; kind: "connect"; state: unknown; history: Entry[]; readOnly?: boolean }
   // One new action. `liftedId` is its id in the lifted state, for lifted stores; `drop` how many of the
   // oldest actions (after the first) the app let go to stay within maxAge, folding them into the first.
   // `n` numbers a connect store's actions, so a reconnect can tell which ones openstate already has.
@@ -60,6 +61,13 @@ export type ServerMessage =
 
 // JSON for app state that may hold what JSON cannot: cycles, functions, Map, Set, BigInt.
 // Shared references are fine; only real cycles become "[Circular]".
+function reactLabel(v: { $$typeof: symbol; type?: unknown }): string {
+  const kind = v.$$typeof.description ?? ""
+  if (!/element/.test(kind)) return `[${kind || "React object"}]`
+  const t = v.type as { displayName?: string; name?: string } | string | undefined
+  return `<${typeof t === "string" ? t : t?.displayName || t?.name || "Component"} />`
+}
+
 export function toJSON(value: unknown): string {
   const stack: object[] = []
   const walk = (v: unknown): unknown => {
@@ -67,6 +75,9 @@ export function toJSON(value: unknown): string {
     if (typeof v === "function") return `[Function ${v.name || "anonymous"}]`
     if (typeof v === "symbol") return v.toString()
     if (v === null || typeof v !== "object") return v
+    // React elements, contexts and DOM nodes reach the whole app through their fibers: named, not walked.
+    if (typeof (v as { $$typeof?: unknown }).$$typeof === "symbol") return reactLabel(v as { $$typeof: symbol; type?: unknown })
+    if (typeof Node !== "undefined" && v instanceof Node) return `[${v.nodeName.toLowerCase()}]`
     if (stack.includes(v)) return "[Circular]"
     if (typeof (v as { toJSON?: unknown }).toJSON === "function") return walk((v as { toJSON: () => unknown }).toJSON())
     stack.push(v)

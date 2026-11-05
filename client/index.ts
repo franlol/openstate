@@ -3,11 +3,13 @@
 //   import "@openstate-devtools/client"   // first import of the app, before any store library
 //
 // Redux Toolkit's configureStore, redux's __REDUX_DEVTOOLS_EXTENSION_COMPOSE__, zustand's `devtools`
-// middleware and jotai-devtools then connect without changes. Configure with install({ url, name }).
+// middleware and jotai-devtools then connect without changes, and the app's React contexts are reported (react.ts).
+// Configure with install({ url, name, react }).
 // The import does nothing in production builds and while Next renders on the server; install() still does.
 import { instrument } from "@redux-devtools/instrument"
 import type { StoreEnhancer } from "redux"
 import { currentStack, libFromStack } from "./detect"
+import { watchContexts } from "./react"
 import { CLIENT_VERSION } from "./version"
 import { PROTOCOL, toJSON, type AppMessage, type Entry, type LiftedState, type ServerMessage } from "./protocol"
 
@@ -16,6 +18,8 @@ export type ClientOptions = {
   url?: string
   // How the app shows in openstate's sources panel.
   name?: string
+  // Report the app's React contexts as stores (on by default).
+  react?: boolean
 }
 
 type Instance = {
@@ -51,6 +55,7 @@ const config = {
   url: env.url || "ws://localhost:8000",
   name: defaultName(),
   maxAge: 500,
+  react: true,
 }
 // Messages wait this long and leave as one frame; their states are serialized then, not on every action.
 const LATENCY = 50
@@ -277,7 +282,8 @@ function devtoolsDispatch(run: () => void) {
 // --- connect(): zustand, jotai-devtools and hand-written integrations -------------------------------------
 type Listener = (message: any) => void
 
-function connectApi(options: { name?: string; lib?: string } = {}) {
+// `trace: false` leaves out the stack of each action; `readOnly` says the app cannot take a state back from openstate.
+function connectApi(options: { name?: string; lib?: string; trace?: boolean; readOnly?: boolean } = {}) {
   const listeners = new Set<Listener>()
   // The state before the kept history, and the history: the last maxAge actions, sent again on (re)connect.
   let base: unknown
@@ -291,7 +297,7 @@ function connectApi(options: { name?: string; lib?: string } = {}) {
   const inst: Instance = {
     id: String(nextId++),
     acted: false,
-    init: () => (started ? { t: "init", id: inst.id, name: name || `store ${inst.id}`, lib, kind: "connect", state: base, history: [...history] } : null),
+    init: () => (started ? { t: "init", id: inst.id, name: name || `store ${inst.id}`, lib, kind: "connect", state: base, history: [...history], readOnly: options.readOnly || undefined } : null),
     onServer: (m) => {
       if (m.t !== "message") return
       // An ACTION message makes the app dispatch; whatever it sends back comes from openstate.
@@ -327,7 +333,7 @@ function connectApi(options: { name?: string; lib?: string } = {}) {
         action: typeof action === "string" ? { type: action } : action,
         state: next,
         time: Date.now(),
-        stack: new Error().stack?.split("\n").slice(2, 12).join("\n"),
+        stack: options.trace === false ? undefined : new Error().stack?.split("\n").slice(2, 12).join("\n"),
         fromDevtools,
       }
       history.push(entry)
@@ -371,6 +377,8 @@ const extension = Object.assign((options?: EnhancerOptions) => enhancer(options)
 export function install(options: ClientOptions = {}) {
   if (options.url) config.url = options.url
   if (options.name) config.name = options.name
+  if (options.react !== undefined) config.react = options.react
+  if (config.react) watchContexts(connectApi, () => config.react)
   // Libraries check `window.__REDUX_DEVTOOLS_EXTENSION__`; outside a browser there is no window, so lend them one.
   if (typeof g.window === "undefined") g.window = g
   g.window.__REDUX_DEVTOOLS_EXTENSION__ = extension

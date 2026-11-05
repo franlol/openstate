@@ -1,6 +1,6 @@
 {
   "name": "openstate",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A terminal UI to inspect and time-travel app state, Redux DevTools compatible",
   "license": "MIT",
   "repository": {
@@ -50,6 +50,8 @@
     "@types/bun": "^1.4.4",
     "@types/jsan": "^3.1.5",
     "@types/react": "^19.3.0",
+    "@types/react-test-renderer": "19",
+    "react-test-renderer": "19.3.1",
     "redux": "^5.0.1",
     "typescript": "^7.0.2"
   },

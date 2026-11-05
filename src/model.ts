@@ -62,6 +62,8 @@ export type Store = {
   // Id of the last committed action; revert returns to its state.
   commitId: number | null
   locked: boolean
+  // The app cannot take a state back (a React context): it can only be watched.
+  readOnly?: boolean
   // Actions the app keeps when it sets its own limit (Redux DevTools remote); otherwise `:set maxage`.
   limit?: number
   conn: StoreConn

@@ -72,6 +72,8 @@ const HELD_BYTES = 16 << 20
 
 // zustand and friends hand over states, not a reducer, so nothing can be replayed differently.
 const unsupported = (st: Store, what: string) => new Error(`${what} needs a Redux store; ${st.name} (${st.lib}) only reports its states`)
+// What a read-only store (a React context) cannot do: the app has no way to take a state from openstate.
+const readOnly = (st: Store, what: string) => new Error(`${what} needs the app to take a state back; ${st.name} (${st.lib}) can only be watched`)
 
 export function startBridge(opts: {
   onChange: () => void
@@ -287,7 +289,10 @@ export function startBridge(opts: {
     const l = () => links.get(st)!
     const base = () => Math.max(0, st.actions.findIndex((a) => a.id === st.commitId))
     return {
-      dispatch: (a) => message(st, { type: "ACTION", payload: JSON.stringify(actionOf(a)) }),
+      dispatch: (a) => {
+        if (st.readOnly) throw readOnly(st, "dispatch")
+        message(st, { type: "ACTION", payload: JSON.stringify(actionOf(a)) })
+      },
       toggle: () => {
         throw unsupported(st, "skip")
       },
@@ -299,6 +304,7 @@ export function startBridge(opts: {
       },
       commit: (id) => ((st.commitId = id), opts.onChange()),
       revert: () => {
+        if (st.readOnly) throw readOnly(st, "revert")
         st.actions.splice(base() + 1)
         l().ignoreInit = true
         message(st, { type: "DISPATCH", payload: { type: "ROLLBACK" }, state: JSON.stringify(st.actions[st.actions.length - 1]?.state ?? null) })
@@ -306,6 +312,7 @@ export function startBridge(opts: {
       },
       sweep: () => ((st.actions = st.actions.filter((a) => !a.skipped)), opts.onChange()),
       import: (h: History) => {
+        if (st.readOnly) throw readOnly(st, "import")
         if (!h.hasStates) throw new Error(`this file has no states; ${st.name} (${st.lib}) cannot replay actions to rebuild them`)
         const link = l()
         st.commitId = null
@@ -384,6 +391,7 @@ export function startBridge(opts: {
     }
     const l = links.get(st)!
     if (m.kind === "lifted") return fromLifted(st, l, m.lifted)
+    st.readOnly = !!m.readOnly
     const history = m.history ?? []
     const first = history[0]?.n
     const run = ws.data.run

@@ -47,6 +47,7 @@ The last two need the client in the project: `npm i -D @openstate-devtools/clien
 ## What you get
 
 - Redux, zustand, jotai and anything built on the devtools API
+- React contexts, with no code to add
 - Time travel: skip, reorder, revert and dispatch actions
 - The diff of every change and the stack trace of every action
 - Several apps on one timeline
