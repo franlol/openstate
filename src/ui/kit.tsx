@@ -1,8 +1,15 @@
-import { RGBA, SyntaxStyle, TextAttributes, type MouseEvent } from "@opentui/core"
+import { addDefaultParsers, RGBA, SyntaxStyle, TextAttributes, type MouseEvent } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import { createContext, useContext, useState, useSyncExternalStore } from "react"
 import type { AppState } from "../state"
 import type { Theme } from "../theme"
+import jsonWasm from "tree-sitter-json/tree-sitter-json.wasm" with { type: "file" }
+import jsonHighlights from "tree-sitter-json/queries/highlights.scm" with { type: "file" }
+import jsonPunctuation from "./json-punctuation.scm" with { type: "file" }
+
+// States and actions are JSON: tree-sitter's own JSON grammar tells keys from string values, which JavaScript's does
+// not. Registered before any code view asks for it; the files are embedded in the compiled binary.
+addDefaultParsers([{ filetype: "json", wasm: jsonWasm, queries: { highlights: [jsonHighlights, jsonPunctuation] } }])
 
 export const AppContext = createContext<AppState | null>(null)
 
@@ -92,16 +99,18 @@ export function useSyntax(theme: Theme): SyntaxStyle {
     s = SyntaxStyle.fromStyles(
       {
         default: { fg: c(theme.fg) },
-        string: { fg: c(theme.add) },
-        number: { fg: c(theme.warn) },
-        boolean: { fg: c(theme.warn) },
-        constant: { fg: c(theme.warn) },
+        string: { fg: c(theme.syntax.string) },
+        "string.special.key": { fg: c(theme.syntax.key) },
+        number: { fg: c(theme.syntax.number) },
+        boolean: { fg: c(theme.syntax.constant) },
+        constant: { fg: c(theme.syntax.constant) },
+        "constant.builtin": { fg: c(theme.syntax.constant) },
         keyword: { fg: c(theme.accent), bold: true },
-        property: { fg: c(theme.sources[1]!) },
-        "variable.member": { fg: c(theme.sources[1]!) },
+        property: { fg: c(theme.syntax.key) },
+        "variable.member": { fg: c(theme.syntax.key) },
         variable: { fg: c(theme.fg) },
-        "punctuation.bracket": { fg: c(theme.muted) },
-        "punctuation.delimiter": { fg: c(theme.muted) },
+        "punctuation.bracket": { fg: c(theme.syntax.punct) },
+        "punctuation.delimiter": { fg: c(theme.syntax.punct) },
         comment: { fg: c(theme.muted), italic: true },
       },
       renderer.nativeScene,

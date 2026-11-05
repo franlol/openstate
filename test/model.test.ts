@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { exportHistory, importHistory, splitAction } from "../src/history"
 import { PROTOCOL } from "../client/protocol"
 import { CLIENT_VERSION } from "../client/version"
-import { changeCount, clientStatus, diff, getPath, hostOf, isLocal, jsonLines, since, type Action, type Source, type Store } from "../src/model"
+import { changeCount, clientStatus, diff, getPath, hostOf, isLocal, jsonLines, preview, previewTokens, since, type Action, type Source, type Store } from "../src/model"
 
 const action = (prev: unknown, state: unknown) => ({ id: 1, prev, state }) as Action
 
@@ -107,4 +107,29 @@ describe("client versions", () => {
     // Redux DevTools remote apps have no client of ours.
     expect(clientStatus(src())).toBe("ok")
   })
+})
+
+test("previews come in pieces the tree colours, cut at the same length as before", () => {
+  expect(previewTokens({ id: 21, name: "ada", ok: true, tags: [1, 2] }, 60)).toEqual([
+    ["{", "punct"],
+    ["id", "key"],
+    [": ", "punct"],
+    ["21", "number"],
+    [", ", "punct"],
+    ["name", "key"],
+    [": ", "punct"],
+    ['"ada"', "string"],
+    [", ", "punct"],
+    ["ok", "key"],
+    [": ", "punct"],
+    ["true", "constant"],
+    [", ", "punct"],
+    ["tags", "key"],
+    [": ", "punct"],
+    ["[…2]", "punct"],
+    ["}", "punct"],
+  ])
+  expect(preview({ id: 21, qty: 1 }, 15)).toBe("{id: 21, qty: 1}".slice(0, 14) + "…")
+  expect(preview({ id: 21, qty: 1 }, 16)).toBe("{id: 21, qty: 1}")
+  expect(preview("a long string value", 10)).toBe('"a long s…')
 })

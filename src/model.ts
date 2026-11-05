@@ -169,10 +169,13 @@ export function getPath(value: unknown, path: string): unknown {
   return v
 }
 
-// States are never changed in place, so an object's preview holds for as long as the object lives.
-const previews = new WeakMap<object, Map<number, string>>()
+// A preview in pieces, each with what it is, so the tree colours it as the theme colours JSON.
+export type Token = [text: string, kind: "key" | "string" | "number" | "constant" | "punct" | "plain"]
 
-export function preview(v: unknown, max = 40): string {
+// States are never changed in place, so an object's preview holds for as long as the object lives.
+const previews = new WeakMap<object, Map<number, Token[]>>()
+
+export function previewTokens(v: unknown, max = 40): Token[] {
   if (!isObj(v)) return previewOf(v, max)
   let byMax = previews.get(v)
   if (!byMax) previews.set(v, (byMax = new Map()))
@@ -181,18 +184,38 @@ export function preview(v: unknown, max = 40): string {
   return s
 }
 
-function previewOf(v: unknown, max: number): string {
-  let s: string
-  if (v === undefined) s = "undefined"
-  else if (typeof v === "string") s = JSON.stringify(v)
-  else if (Array.isArray(v)) s = `Array(${v.length})`
+export const preview = (v: unknown, max = 40) => previewTokens(v, max).map(([x]) => x).join("")
+
+function previewOf(v: unknown, max: number): Token[] {
+  const out: Token[] = []
+  if (v === undefined || v === null || typeof v === "boolean") out.push([String(v), "constant"])
+  else if (typeof v === "string") out.push([JSON.stringify(v), "string"])
+  else if (typeof v === "number") out.push([String(v), "number"])
+  else if (Array.isArray(v)) out.push([`Array(${v.length})`, "plain"])
   else if (isObj(v)) {
-    const inner = Object.entries(v)
-      .map(([k, x]) => `${k}: ${isObj(x) ? (Array.isArray(x) ? `[…${x.length}]` : "{…}") : preview(x, 12)}`)
-      .join(", ")
-    s = `{${inner}}`
-  } else s = String(v)
-  return s.length > max ? s.slice(0, max - 1) + "…" : s
+    out.push(["{", "punct"])
+    Object.entries(v).forEach(([k, x], i) => {
+      if (i) out.push([", ", "punct"])
+      out.push([k, "key"], [": ", "punct"])
+      if (isObj(x)) out.push([Array.isArray(x) ? `[…${x.length}]` : "{…}", "punct"])
+      else out.push(...previewTokens(x, 12))
+    })
+    out.push(["}", "punct"])
+  } else out.push([String(v), "plain"])
+  // Past max the preview is cut, an ellipsis in place of the last character that fits.
+  const cut: Token[] = []
+  let room = max
+  for (const [text, kind] of out) {
+    if (text.length < room || (text.length === room && cut.length + 1 === out.length)) {
+      cut.push([text, kind])
+      room -= text.length
+      continue
+    }
+    if (room > 1) cut.push([text.slice(0, room - 1), kind])
+    cut.push(["…", "punct"])
+    break
+  }
+  return cut
 }
 
 export type TreeRow = {

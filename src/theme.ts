@@ -16,6 +16,9 @@ export type Theme = {
   flash: string
   // The light that runs across the header title once at start; picked to stand out on the theme's background.
   shine: string
+  // Colours of state values, in the tree and in JSON alike, from each theme's own guide for code: object keys,
+  // strings, numbers, true/false/null, and braces and commas.
+  syntax: { key: string; string: string; number: string; constant: string; punct: string }
   sources: string[]
 }
 
@@ -37,6 +40,8 @@ export const themes: Theme[] = [
     warn: "#ffc857",
     flash: "#2e2a5c",
     shine: "#e4e0ff",
+    // openstate's own
+    syntax: { key: "#7fb4ff", string: "#3fd68f", number: "#ffc857", constant: "#ffc857", punct: "#7d8590" },
     sources: ["#7c6cff", "#3fd6c8", "#ff9f5a", "#ff6bb5", "#9ad64f"],
   },
   {
@@ -56,6 +61,8 @@ export const themes: Theme[] = [
     warn: "#f9e2af",
     flash: "#45385c",
     shine: "#f5e0dc",
+    // style guide: Blue, Green, Peach, Peach, Overlay 2
+    syntax: { key: "#89b4fa", string: "#a6e3a1", number: "#fab387", constant: "#fab387", punct: "#9399b2" },
     sources: ["#cba6f7", "#94e2d5", "#fab387", "#f5c2e7", "#a6e3a1"],
   },
   {
@@ -75,6 +82,8 @@ export const themes: Theme[] = [
     warn: "#e0af68",
     flash: "#2f3f6e",
     shine: "#c0caf5",
+    // tokyonight.nvim: green1, green, orange, orange, fg_dark
+    syntax: { key: "#73daca", string: "#9ece6a", number: "#ff9e64", constant: "#ff9e64", punct: "#a9b1d6" },
     sources: ["#7aa2f7", "#7dcfff", "#ff9e64", "#bb9af7", "#9ece6a"],
   },
   {
@@ -94,6 +103,8 @@ export const themes: Theme[] = [
     warn: "#fe8019",
     flash: "#5a4a1c",
     shine: "#fbf1c7",
+    // gruvbox.nvim: blue, green, purple, purple, orange
+    syntax: { key: "#83a598", string: "#b8bb26", number: "#d3869b", constant: "#d3869b", punct: "#fe8019" },
     sources: ["#fabd2f", "#8ec07c", "#fe8019", "#d3869b", "#b8bb26"],
   },
   {
@@ -113,6 +124,8 @@ export const themes: Theme[] = [
     warn: "#ebcb8b",
     flash: "#3e5a66",
     shine: "#eceff4",
+    // Nord for VS Code: nord4, nord14, nord15, nord9, nord6
+    syntax: { key: "#d8dee9", string: "#a3be8c", number: "#b48ead", constant: "#81a1c1", punct: "#eceff4" },
     sources: ["#88c0d0", "#8fbcbb", "#d08770", "#b48ead", "#a3be8c"],
   },
 ]

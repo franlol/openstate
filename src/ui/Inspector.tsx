@@ -1,7 +1,7 @@
 import type { LineColorConfig, LineNumberRenderable, ScrollBoxRenderable, TabSelectRenderable } from "@opentui/core"
 import { createTwoFilesPatch } from "diff"
 import { useEffect, useRef, useState, type RefObject } from "react"
-import { jsonLines, preview, type TreeRow } from "../model"
+import { jsonLines, preview, previewTokens, type TreeRow } from "../model"
 import { TABS } from "../state"
 import { mix } from "../theme"
 import { BOLD, fit, Line, scrollbar, spread, useApp, useSyntax, type Part } from "./kit"
@@ -103,10 +103,10 @@ function StateTree({ width }: { width: number }) {
           [cursor ? "▌" : " ", t.accent],
           [indent, t.dim],
           [r.branch ? (r.open ? "▾ " : "▸ ") : "  ", t.muted],
-          [r.key, c || n ? t.fg : t.sources[1]!, c ? BOLD : undefined],
-          [": ", t.dim],
+          [r.key, c || n ? t.fg : t.syntax.key, c ? BOLD : undefined],
+          [": ", t.syntax.punct],
         ]
-        if (!r.open) left.push([preview(r.value, 48), valueColor(r.value, t)])
+        if (!r.open) for (const [text, kind] of previewTokens(r.value, 48)) left.push([text, kind === "plain" ? t.fg : t.syntax[kind]])
         const right: Part[] = []
         if (c && !r.branch) right.push([` ← ${preview(c.before, 18)} `, t.remove])
         else if (n && !r.open) right.push([` ${n} changed `, t.warn])
@@ -158,19 +158,12 @@ function useVisibleRows(ref: RefObject<ScrollBoxRenderable | null>, total: numbe
   return { from, to: Math.min(total, view.top + view.height + OVERSCAN), height: view.height }
 }
 
-function valueColor(v: unknown, t: { add: string; warn: string; muted: string; fg: string }) {
-  if (typeof v === "string") return t.add
-  if (typeof v === "number" || typeof v === "boolean") return t.warn
-  if (v === null || v === undefined) return t.muted
-  return t.fg
-}
-
 function CodeView({ content }: { content: string }) {
   const s = useApp()
   const syntax = useSyntax(s.theme)
   return (
     <scrollbox flexGrow={1} paddingLeft={1} scrollbarOptions={scrollbar(s.theme)}>
-      <code content={content} filetype="javascript" syntaxStyle={syntax} fg={s.theme.fg} />
+      <code content={content} filetype="json" syntaxStyle={syntax} fg={s.theme.fg} />
     </scrollbox>
   )
 }
@@ -213,7 +206,7 @@ function RawView() {
   return (
     <scrollbox ref={scroll} flexGrow={1} scrollbarOptions={scrollbar(t)}>
       <line-number ref={gutter} fg={t.dim} bg={t.panel} minWidth={3} paddingRight={1}>
-        <code content={lines.map((l) => l.text).join("\n")} filetype="javascript" syntaxStyle={syntax} fg={t.fg} />
+        <code content={lines.map((l) => l.text).join("\n")} filetype="json" syntaxStyle={syntax} fg={t.fg} />
       </line-number>
     </scrollbox>
   )
@@ -232,7 +225,7 @@ function DiffView() {
       flexGrow={1}
       diff={patch}
       view="unified"
-      filetype="javascript"
+      filetype="json"
       syntaxStyle={syntax}
       fg={t.fg}
       showLineNumbers

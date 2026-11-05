@@ -53,6 +53,7 @@
     "@types/react-test-renderer": "19",
     "react-test-renderer": "19.3.1",
     "redux": "^5.0.1",
+    "tree-sitter-json": "0.24.8",
     "typescript": "^7.0.2"
   },
   "files": [

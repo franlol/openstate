@@ -48,7 +48,8 @@ Use Bun for everything (`bun`, `bunx`, `bun test`, `Bun.serve` for servers with 
   the install's progress; `src/main.tsx` restarts into the new version
 - `src/desktop.ts` — `--desktop` / `--no-desktop`: the app launcher entry (Linux `.desktop`, macOS `.app`), with
   `assets/icon-512.png` embedded in the binary (`assets/icon.svg` is the source)
-- `src/theme.ts` — theme tokens; never hardcode colours in components
+- `src/theme.ts` — theme tokens; never hardcode colours in components. `syntax` colours state values (tree and JSON
+  alike) and comes from each theme's own guide, never made up. JSON views use tree-sitter's JSON grammar (`src/ui/kit.tsx`)
 - `src/ui/keys.ts` — every keybinding, also feeds the help overlay and status hints
 - `src/ui/kit.tsx` — `Line`/`Part` rendering helpers (`fit`, `spread`), syntax styles
 - `src/ui/*.tsx` — Header/Track (top), panels, inspector, statusline + command line (`Bottom`), dispatch card, overlays
